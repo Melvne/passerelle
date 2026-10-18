@@ -117,6 +117,7 @@ pre.sortie-texte{background:var(--surface);color:var(--encre);border:1px solid v
     <a class="logo" href="#/"><span class="pastille" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg></span>Passerelle</a>
     <a class="lien-menu" href="#/" data-page="accueil"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Accueil</a>
     <a class="lien-menu" href="#/bibliotheque" data-page="bibliotheque"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mes applications</a>
+    <a class="lien-menu" href="#/reglages" data-page="reglages"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 3.6 4 .6-2.9 2.8.7 4L12 12.1 8.4 14l.7-4-2.9-2.8 4-.6z"/><path d="M5 21h14"/></svg>Intelligence artificielle</a>
     <div class="etat-python" role="status"><span class="voyant" id="voyant"></span><span id="texte-python">Python n'est pas encore chargé</span></div>
   </nav>
   <main id="page" tabindex="-1"></main>
@@ -158,6 +159,9 @@ const idDe = (depot) => depot.toLowerCase().replace("/", "__").replace(/[^\w.\-]
 
 // ================================================================ mémoire du navigateur
 const CLE = "passerelle.applications.v1";
+const CLE_IA = "passerelle.cle_ia";
+function lireCleIA() { try { return localStorage.getItem(CLE_IA) || ""; } catch (e) { return ""; } }
+function ecrireCleIA(v) { try { if (v) localStorage.setItem(CLE_IA, v); else localStorage.removeItem(CLE_IA); return true; } catch (e) { return false; } }
 function chargerApps() { try { return JSON.parse(localStorage.getItem(CLE) || "{}"); } catch (e) { return {}; } }
 let APPS = chargerApps();
 function sauver() {
@@ -179,7 +183,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=3");
+  travailleur = new Worker("travailleur.js?v=4");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);
@@ -223,6 +227,7 @@ function router() {
   if (vue === "installation" && id) return vueInstallation(decodeURIComponent(id));
   if (vue === "app" && id) return vueApplication(decodeURIComponent(id));
   if (vue === "bibliotheque") return vueBibliotheque();
+  if (vue === "reglages") return vueReglages();
   return vueAccueil();
 }
 window.addEventListener("hashchange", router);
@@ -243,7 +248,8 @@ function vueAccueil() {
         <button class="bouton" type="submit" style="min-height:52px">Créer l'application ${ICONES.fleche}</button>
       </div>
       <div id="msg-lien" class="erreur" role="alert" hidden></div>
-      <p class="aide" style="margin:0">Fonctionne avec les outils écrits en Python qui s'utilisent en ligne de commande et ne dépendent que de bibliothèques compatibles avec le navigateur.</p>
+      <p class="aide" style="margin:0">Fonctionne avec les outils écrits en Python et compatibles avec le navigateur.
+        ${lireCleIA() ? `<strong style="color:var(--vert)">L'IA est activée</strong> : elle lit chaque projet pour créer une interface en français.` : `<a href="#/reglages">Activez l'IA</a> pour comprendre beaucoup plus de projets et obtenir une interface en français.`}</p>
     </form>
     <section style="display:flex;flex-direction:column;gap:16px">
       <h2 class="h2">Essayez avec un de ces outils</h2>
@@ -285,7 +291,8 @@ function demarrerInstallation(id, depot) {
   const suivi = { etapes: ETAPES.map(([cle, titre]) => ({ cle, titre, etat: "attente" })), journal: [] };
   installations.set(id, suivi);
   const rafraichir = () => { if (location.hash === `#/installation/${id}`) dessinerInstallation(id); };
-  demander("installer", { id, depot }, (m) => {
+  demander("installer", { id, depot, cleIA: lireCleIA() }, (m) => {
+    if (m.type === "avertissement_ia") suivi.alerteIA = m.message;
     if (m.type === "etape") { const e = suivi.etapes.find((x) => x.cle === m.cle); if (e) { e.etat = m.etat; if (m.detail) e.detail = m.detail; } }
     if (m.type === "journal") { suivi.journal.push(m.ligne); if (suivi.journal.length > 400) suivi.journal.shift(); }
     rafraichir();
@@ -349,6 +356,7 @@ function dessinerInstallation(id) {
         </div>
       </li>`).join("")}
     </ol>
+    ${suivi.alerteIA ? `<div class="alerte">L'IA n'a pas pu être utilisée (${echap(suivi.alerteIA)}). Passerelle a utilisé son analyse automatique à la place. <a href="#/reglages">Vérifier les réglages</a></div>` : ""}
     ${d.statut === "erreur" ? `<div class="erreur" role="alert">${echap(d.erreur || "Une erreur s'est produite.")}</div>` : ""}
     ${d.statut === "incomplet" ? `<div class="alerte">Certaines bibliothèques de ce projet ne fonctionnent pas dans un navigateur (${echap((d.problemes || []).join(", "))}). L'application peut quand même marcher en partie : essayez-la.</div>` : ""}
     ${suivi.journal.length ? `<details class="technique" ${ouvert ? "open" : ""}><summary>Détails techniques</summary><pre class="journal" id="journal">${echap(suivi.journal.join("\n"))}</pre></details>` : ""}
@@ -417,7 +425,7 @@ function vueApplication(id) {
         <span class="icone" style="width:56px;height:56px;border-radius:14px;background:var(--vert-pale);color:var(--vert)">${ICONES.boite}</span>
         <div style="min-width:0"><h1 style="font-size:32px;font-weight:700;text-transform:capitalize">${echap(d.nom)}</h1><div class="mono">github.com/${echap(d.depot)}</div></div>
       </div>
-      <span class="badge ${d.statut}">${d.statut === "pret" ? "Interface créée automatiquement" : "Installée avec des soucis"}</span>
+      <span class="badge ${d.statut}">${d.statut !== "pret" ? "Installée avec des soucis" : d.analyse.source === "ia" ? "Interface créée par l'IA" : "Interface créée automatiquement"}</span>
     </div>
     ${d.description ? `<p style="margin:0;color:var(--doux);max-width:760px">${echap(d.description)}</p>` : ""}
     ${(d.analyse.avertissements || []).map((a) => `<div class="alerte">${echap(a)}</div>`).join("")}
@@ -579,6 +587,58 @@ function vueApplication(id) {
       catch (e) { const s = getSelection(); s.selectAllChildren(document.getElementById("texte-sortie")); ev.target.textContent = "Texte sélectionné"; }
     });
   }
+}
+
+// ================================================================ réglages (IA)
+function vueReglages() {
+  marquerMenu("reglages");
+  const cle = lireCleIA();
+  const masque = cle ? `${cle.slice(0, 10)}…${cle.slice(-4)}` : "";
+  $page.innerHTML = `
+  <div class="contenu etroit">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <h1 class="h1" style="font-size:40px">Intelligence artificielle</h1>
+      <p class="sous-titre" style="font-size:16px">Avec l'IA, Passerelle lit le code et le mode d'emploi de chaque projet pour créer une interface plus juste, avec des textes en français. Elle comprend aussi des projets que l'analyse automatique ne sait pas lire.</p>
+    </div>
+    <section class="carte" style="display:flex;flex-direction:column;gap:14px">
+      <h2 class="h2">Clé d'accès à Claude</h2>
+      ${cle ? `<div class="info">L'IA est activée avec la clé <span class="mono" style="color:inherit">${echap(masque)}</span>.</div>` : `<div class="alerte">L'IA n'est pas activée : Passerelle utilise son analyse automatique, limitée aux projets bien structurés.</div>`}
+      <form id="form-cle" style="display:flex;flex-direction:column;gap:10px">
+        <label for="cle-ia" class="titre-champ" style="margin:0">${cle ? "Remplacer la clé" : "Votre clé"}</label>
+        <input id="cle-ia" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" style="font-family:var(--mono)">
+        <div id="msg-cle" role="status" hidden></div>
+        <div class="ligne">
+          <button class="bouton" type="submit">Vérifier et enregistrer</button>
+          ${cle ? `<button class="bouton danger" type="button" id="retirer-cle">Retirer la clé</button>` : ""}
+        </div>
+      </form>
+    </section>
+    <section class="carte" style="display:flex;flex-direction:column;gap:10px">
+      <h2 class="h2">Comment obtenir une clé</h2>
+      <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--doux)">
+        <li>Créez un compte sur la console Claude : <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>.</li>
+        <li>Ajoutez un peu de crédit (l'analyse d'un projet coûte en général quelques centimes).</li>
+        <li>Dans « API Keys », créez une clé, copiez-la et collez-la ci-dessus.</li>
+      </ol>
+      <p class="aide" style="margin:0">La clé reste dans ce navigateur. Elle n'est envoyée qu'au service d'IA de Claude, au moment d'analyser un projet. Ne la partagez avec personne.</p>
+    </section>
+  </div>`;
+  const msg = document.getElementById("msg-cle");
+  const dire = (texte, ok) => { msg.className = ok ? "info" : "erreur"; msg.textContent = texte; msg.hidden = false; };
+  document.getElementById("form-cle").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const v = document.getElementById("cle-ia").value.trim();
+    if (!v) { dire("Collez d'abord votre clé.", false); return; }
+    const b = e.submitter || e.target.querySelector("button[type=submit]");
+    b.disabled = true; b.textContent = "Vérification…";
+    try {
+      const r = await demander("tester_ia", { cle: v });
+      if (r.ok) { ecrireCleIA(v); vueReglages(); document.getElementById("msg-cle").hidden = false; document.getElementById("msg-cle").className = "info"; document.getElementById("msg-cle").textContent = "Clé vérifiée et enregistrée. Les prochains projets seront analysés par l'IA."; }
+      else dire(r.message, false);
+    } catch (err) { dire(err.message, false); }
+    b.disabled = false; b.textContent = "Vérifier et enregistrer";
+  });
+  document.getElementById("retirer-cle")?.addEventListener("click", () => { ecrireCleIA(""); vueReglages(); });
 }
 
 // ================================================================ bibliothèque

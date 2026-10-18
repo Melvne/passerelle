@@ -297,3 +297,15 @@ def executer(id_app, outil_json, valeurs_json, fichiers_json, dossier_job, lance
 
 def resultats(dossier_job):
     return json.dumps(executeur.lister_resultats(dossier_job), ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ IA
+
+def contexte_ia(id_app, depot, description_github, regles_json):
+    import ia
+    return ia.contexte(dossier_code(id_app), depot, description_github, regles_json)
+
+
+def valider_ia(id_app, reponse_json, regles_json):
+    import ia
+    return ia.valider(dossier_code(id_app), reponse_json, regles_json)

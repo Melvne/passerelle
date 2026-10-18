@@ -30,6 +30,14 @@ Autre option sans GitHub : https://app.netlify.com/drop permet de glisser le dos
 Un double-clic sur `index.html` **ne fonctionne pas** : les navigateurs interdisent à une page ouverte depuis un fichier de lancer Python en arrière-plan.
 Sous Windows, double-cliquez plutôt sur `Essayer-en-local.bat` (Python doit être installé) : la page s'ouvre à l'adresse http://localhost:8000.
 
+## L'intelligence artificielle (facultative)
+
+Dans la page « Intelligence artificielle » du site, chaque visiteur peut coller sa propre clé d'accès à Claude
+(obtenue sur https://console.anthropic.com). Passerelle envoie alors à l'IA le mode d'emploi et les fichiers de code
+clés de chaque projet ; l'IA décrit comment lancer l'outil et quels champs afficher, avec des textes en français.
+Sa réponse est vérifiée avant d'être utilisée (chemins existants, types de champs connus). Sans clé, ou si l'IA échoue,
+Passerelle utilise son analyse automatique. La clé reste dans le navigateur du visiteur et n'est envoyée qu'à Claude.
+
 ## Ce qui fonctionne
 
 - N'importe quel dépôt GitHub **public**.
@@ -59,6 +67,8 @@ Projets conseillés pour une démonstration : `lincolnloop/python-qrcode`, `pwal
 | `index.html` | Interface (pages, formulaires générés, résultats) et mémoire du navigateur |
 | `travailleur.js` | Tourne en arrière-plan : charge Pyodide, récupère le dépôt via l'API GitHub, orchestre analyse, installation et lancement |
 | `py/moteur.py` | Côté Python : installation avec micropip, exécution de l'outil dans la page, capture de ce qu'il affiche et produit |
+| `ia-consignes.js` | Consignes et format de réponse demandés à l'IA |
+| `py/ia.py` | Prépare ce que l'IA doit lire et vérifie sa réponse |
 | `py/analyseur.py` | Lit le code du dépôt sans l'exécuter et en déduit les actions et les options (le même que la version Windows) |
 | `py/executeur.py`, `py/installeur.py` | Fonctions partagées avec la version Windows (construction des arguments, lecture des dépendances) |
 

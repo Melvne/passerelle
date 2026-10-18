@@ -7,9 +7,10 @@
 
 const VERSION_PYODIDE = "0.28.3";
 importScripts(`https://cdn.jsdelivr.net/pyodide/v${VERSION_PYODIDE}/full/pyodide.js`);
+importScripts("ia-consignes.js?v=4");
 
-const VERSION_MOTEUR = "2";
-const FICHIERS_MOTEUR = ["analyseur.py", "installeur.py", "executeur.py", "moteur.py"];
+const VERSION_MOTEUR = "4";
+const FICHIERS_MOTEUR = ["analyseur.py", "installeur.py", "executeur.py", "ia.py", "moteur.py"];
 const DOSSIERS_IGNORES = new Set([".git", "venv", ".venv", "env", "node_modules", "__pycache__", "build", "dist",
   "site-packages", ".tox", "docs", "doc", "examples", "example", "tests", "test", "benchmarks", ".github"]);
 const LIMITES = { fichiersLegers: 800, fichiersTotal: 2500, octetsTotal: 80 * 1024 * 1024, octetsFichier: 5 * 1024 * 1024 };
@@ -118,6 +119,52 @@ async function telechargerFichiers(id, meta, chemins, journal) {
   return octets;
 }
 
+// ---------------------------------------------------------------- IA (Claude)
+async function demanderIA(cle, contexte) {
+  let r;
+  try {
+    r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": cle,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: MODELE_IA, max_tokens: 8000, system: CONSIGNES_IA,
+        tools: [OUTIL_IA], tool_choice: { type: "tool", name: OUTIL_IA.name },
+        messages: [{ role: "user", content: contexte }],
+      }),
+    });
+  } catch (e) { throw new ErreurClaire("impossible de joindre le service d'IA"); }
+  if (r.status === 401 || r.status === 403) throw new ErreurClaire("clé IA refusée : vérifiez-la dans les Réglages");
+  if (r.status === 429) throw new ErreurClaire("trop de demandes envoyées à l'IA, réessayez dans un moment");
+  if (r.status === 400) {
+    let m = ""; try { m = (await r.json()).error.message; } catch (e) {}
+    throw new ErreurClaire(/credit|billing|balance/i.test(m) ? "crédit IA épuisé sur ce compte" : `demande refusée par l'IA (${m.slice(0, 120)})`);
+  }
+  if (!r.ok) throw new ErreurClaire(`le service d'IA a répondu avec une erreur (${r.status})`);
+  const d = await r.json();
+  const bloc = (d.content || []).find((c) => c.type === "tool_use");
+  if (!bloc) throw new ErreurClaire("réponse de l'IA incomplète");
+  return bloc.input;
+}
+
+async function testerCleIA(cle) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": cle, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+    body: JSON.stringify({ model: MODELE_IA, max_tokens: 5, messages: [{ role: "user", content: "Réponds seulement : OK" }] }),
+  }).catch(() => null);
+  if (!r) return { ok: false, message: "Impossible de joindre le service d'IA." };
+  if (r.ok) return { ok: true };
+  let m = ""; try { m = (await r.json()).error.message; } catch (e) {}
+  if (r.status === 401 || r.status === 403) return { ok: false, message: "Cette clé est refusée. Vérifiez qu'elle est complète et toujours active." };
+  if (/credit|billing|balance/i.test(m)) return { ok: false, message: "La clé est valide, mais le compte n'a plus de crédit." };
+  return { ok: false, message: `Erreur du service d'IA (${r.status}).` };
+}
+
 async function correspondPyPI(nom, depot) {
   try {
     const r = await fetch(`https://pypi.org/pypi/${encodeURIComponent(nom)}/json`);
@@ -177,15 +224,33 @@ async function installer(msg) {
     cle = "analyse";
     etape("analyse", "en_cours");
     journal("Lecture du code du projet…");
-    const analyse = JSON.parse(moteur.analyser(id, meta.depot));
+    const reglesJson = moteur.analyser(id, meta.depot);
+    const regles = JSON.parse(reglesJson);
+    let analyse = regles;
+    const aDuPython = meta.fichiers.some(([p]) => p.endsWith(".py"));
+    if (msg.cleIA && aDuPython) {
+      try {
+        journal("Analyse du projet par l'IA…");
+        const contexte = moteur.contexte_ia(id, meta.depot, meta.description || "", reglesJson);
+        const reponse = await demanderIA(msg.cleIA, contexte);
+        const v = JSON.parse(moteur.valider_ia(id, JSON.stringify(reponse), reglesJson));
+        if (v.ok) { analyse = v.analyse; journal("L'IA a décrit l'interface."); }
+        else if (v.ia) { analyse = { ok: false, raison: v.raison, description: regles.description }; journal(`L'IA estime que ce projet n'est pas utilisable : ${v.raison}`); }
+        else journal(`Réponse de l'IA inutilisable (${v.raison}) : utilisation de l'analyse automatique.`);
+      } catch (e) {
+        journal(`L'IA n'a pas pu être utilisée (${e.message}) : utilisation de l'analyse automatique.`);
+        envoyer({ type: "avertissement_ia", reqId: msg.reqId, message: e.message });
+      }
+    }
     if (!analyse.ok) {
       let raison = analyse.raison;
-      if (meta.langage && meta.langage !== "Python") raison += ` (langage principal de ce projet : ${meta.langage}).`;
+      if (meta.langage && meta.langage !== "Python" && !raison.includes(meta.langage)) raison += ` (langage principal de ce projet : ${meta.langage}).`;
       etape("analyse", "erreur", raison);
       return { ok: false, raison, description: meta.description || analyse.description };
     }
+    analyse.source = analyse.source || "regles";
     journal(`Trouvé : ${analyse.outils.length} action(s) possible(s).`);
-    etape("analyse", "fait");
+    etape("analyse", "fait", analyse.source === "ia" ? "Interface décrite par l'IA." : "Analyse automatique (sans IA).");
 
     cle = "installation";
     const res = await etapeInstallation();
@@ -203,7 +268,8 @@ async function installer(msg) {
       res.problemes.length ? `Non installé dans le navigateur : ${res.problemes.join(", ")}` : (res.paquet_installe ? "Version officielle installée." : "Lancé depuis le code du dépôt."));
     etape("interface", "fait");
     prets.add(id);
-    return { ok: true, analyse, meta, description: meta.description || analyse.description, ...res };
+    const description = analyse.source === "ia" ? (analyse.description || meta.description) : (meta.description || analyse.description);
+    return { ok: true, analyse, meta, description, ...res };
   } catch (e) {
     const message = e instanceof ErreurClaire ? e.message : `Erreur inattendue : ${e && e.message || e}`;
     journal(`ERREUR : ${e && e.message || e}`);
@@ -268,6 +334,7 @@ onmessage = async (e) => {
   try {
     if (msg.type === "init") { await initialiser(); envoyer({ type: "fin", reqId: msg.reqId }); return; }
     if (msg.type === "installer") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await installer(msg) }); return; }
+    if (msg.type === "tester_ia") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await testerCleIA(msg.cle) }); return; }
     if (msg.type === "preparer") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await preparer(msg) }); return; }
     if (msg.type === "lancer") {
       await initialiser();
