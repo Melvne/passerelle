@@ -15,9 +15,11 @@ import re
 import analyseur
 
 GENRES = {"texte", "fichier", "dossier", "sortie", "sortie_dossier", "case", "choix", "entier", "nombre"}
-LIMITE_README = 8000
-LIMITE_EXTRAIT = 7000
-LIMITE_TOTAL = 36000
+# Budget de lecture : un petit modèle dans le navigateur lit environ 8 000 jetons (README + code + réponse)
+TAILLES = {
+    "local": {"readme": 2500, "extrait": 4500, "total": 9000, "fichiers": 80, "config": 1200, "nb": 4},
+    "complet": {"readme": 8000, "extrait": 7000, "total": 36000, "fichiers": 300, "config": 3000, "nb": 8},
+}
 INDICES_CODE = re.compile(r"argparse|optparse|click|typer|fire\.Fire|sys\.argv|__main__|def main\b|input\(")
 
 
@@ -30,8 +32,37 @@ def _lire(chemin, limite):
     return texte if len(texte) <= limite else texte[:limite] + "\n[… coupé …]"
 
 
-def contexte(racine, depot, description_github, regles_json):
+LIGNES_UTILES = re.compile(r"add_argument|add_option|add_parser|click\.(option|argument|command|group)|@\w+\.(command|option|argument)|"
+                           r"ArgumentParser|OptionParser|typer|fire\.Fire|def main\b|sys\.argv|__name__\s*==|usage\s*=")
+
+
+def _extrait_code(chemin, limite):
+    """Le début d'un gros fichier est rarement utile : on garde surtout les lignes qui lisent les arguments."""
+    texte = _lire(chemin, 400000)
+    if len(texte) <= limite:
+        return texte
+    lignes = texte.splitlines()
+    garder = set(range(min(15, len(lignes))))  # en-tête : imports et description du module
+    for i, l in enumerate(lignes):
+        if LIGNES_UTILES.search(l):
+            garder.update(range(max(0, i - 2), min(len(lignes), i + 7)))
+    morceaux, precedent, taille = [], -2, 0
+    for i in sorted(garder):
+        l = lignes[i][:200]
+        if i != precedent + 1:
+            morceaux.append("    […]")
+        morceaux.append(l)
+        taille += len(l) + 1
+        precedent = i
+        if taille > limite:
+            morceaux.append("    [… coupé …]")
+            break
+    return "\n".join(morceaux)
+
+
+def contexte(racine, depot, description_github, regles_json, taille="local"):
     """Texte envoyé à l'IA pour qu'elle comprenne le projet."""
+    T = TAILLES.get(taille, TAILLES["local"])
     fichiers, py = [], []
     for dossier, sous, noms in os.walk(racine):
         sous[:] = sorted(s for s in sous if not s.startswith("."))
@@ -61,11 +92,11 @@ def contexte(racine, depot, description_github, regles_json):
               and not re.match(r"test_|.*_test\.py$|test\.py$", os.path.basename(r))
               and not re.search(r"(^|/)(tests?|docs?|examples?)/", r)]
     notes = {r: score(r) for r in utiles}
-    for rel in sorted(utiles, key=notes.get, reverse=True)[:8]:
+    for rel in sorted(utiles, key=notes.get, reverse=True)[:T["nb"]]:
         if notes[rel] <= 0 and choisis:
             break
-        extrait = _lire(os.path.join(racine, rel), LIMITE_EXTRAIT)
-        if total + len(extrait) > LIMITE_TOTAL:
+        extrait = _extrait_code(os.path.join(racine, rel), min(T["extrait"], T["total"] - total))
+        if len(extrait) < 300 and choisis:
             break
         choisis.append((rel, extrait))
         total += len(extrait)
@@ -73,22 +104,22 @@ def contexte(racine, depot, description_github, regles_json):
     readme = ""
     for n in sorted(os.listdir(racine)):
         if n.lower().startswith("readme"):
-            readme = _lire(os.path.join(racine, n), LIMITE_README)
+            readme = _lire(os.path.join(racine, n), T["readme"])
             break
 
     config = []
     for n in ("pyproject.toml", "setup.cfg", "setup.py", "requirements.txt"):
         p = os.path.join(racine, n)
         if os.path.exists(p):
-            config.append((n, _lire(p, 3000)))
+            config.append((n, _lire(p, T["config"])))
 
     parties = [
         f"# Dépôt GitHub : {depot}",
         f"Description GitHub : {description_github or '(aucune)'}",
         "## Liste des fichiers récupérés (code et configuration uniquement)",
-        "\n".join(fichiers[:300]) + ("\n[…]" if len(fichiers) > 300 else ""),
+        "\n".join(fichiers[:T["fichiers"]]) + ("\n[…]" if len(fichiers) > T["fichiers"] else ""),
         "## Analyse automatique par règles (peut être incomplète ou fausse)",
-        regles_json,
+        _resume_regles(regles_json),
         "## README",
         readme or "(aucun README)",
     ]
@@ -97,6 +128,21 @@ def contexte(racine, depot, description_github, regles_json):
     for rel, t in choisis:
         parties += [f"## Code : {rel}", t]
     return "\n\n".join(parties)
+
+
+def _resume_regles(regles_json):
+    """Version courte de l'analyse par règles (le JSON complet prendrait trop de place)."""
+    try:
+        r = json.loads(regles_json)
+    except ValueError:
+        return "(indisponible)"
+    if not r.get("ok"):
+        return "Aucun outil trouvé par les règles."
+    lignes = [f"lancement: {json.dumps(r['lancement'], ensure_ascii=False)}"]
+    for o in r["outils"][:6]:
+        lignes.append(f"action {o['prefixe'] or '(unique)'}: " + ", ".join(
+            f"{p['drapeau'] or p['nom']}={p['genre']}" for p in o["params"][:20]))
+    return "\n".join(lignes)
 
 
 # ------------------------------------------------------------------ validation
@@ -160,8 +206,10 @@ def _param(p):
     if genre == "case" and positionnel:
         genre = "texte"
     defaut = p.get("defaut")
-    if not isinstance(defaut, (str, int, float, bool)):
+    if not isinstance(defaut, (str, int, float, bool)) or (isinstance(defaut, str) and not defaut.strip()):
         defaut = None
+    elif genre == "case":
+        defaut = None if not isinstance(defaut, bool) else defaut
     return {
         "nom": nom, "drapeau": drapeau, "positionnel": positionnel,
         "libelle": _texte(p.get("libelle"), analyseur._libelle(nom), 80),

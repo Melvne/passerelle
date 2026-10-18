@@ -7,9 +7,8 @@
 
 const VERSION_PYODIDE = "0.28.3";
 importScripts(`https://cdn.jsdelivr.net/pyodide/v${VERSION_PYODIDE}/full/pyodide.js`);
-importScripts("ia-consignes.js?v=4");
 
-const VERSION_MOTEUR = "4";
+const VERSION_MOTEUR = "5";
 const FICHIERS_MOTEUR = ["analyseur.py", "installeur.py", "executeur.py", "ia.py", "moteur.py"];
 const DOSSIERS_IGNORES = new Set([".git", "venv", ".venv", "env", "node_modules", "__pycache__", "build", "dist",
   "site-packages", ".tox", "docs", "doc", "examples", "example", "tests", "test", "benchmarks", ".github"]);
@@ -119,50 +118,16 @@ async function telechargerFichiers(id, meta, chemins, journal) {
   return octets;
 }
 
-// ---------------------------------------------------------------- IA (Claude)
-async function demanderIA(cle, contexte) {
-  let r;
-  try {
-    r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": cle,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model: MODELE_IA, max_tokens: 8000, system: CONSIGNES_IA,
-        tools: [OUTIL_IA], tool_choice: { type: "tool", name: OUTIL_IA.name },
-        messages: [{ role: "user", content: contexte }],
-      }),
-    });
-  } catch (e) { throw new ErreurClaire("impossible de joindre le service d'IA"); }
-  if (r.status === 401 || r.status === 403) throw new ErreurClaire("clé IA refusée : vérifiez-la dans les Réglages");
-  if (r.status === 429) throw new ErreurClaire("trop de demandes envoyées à l'IA, réessayez dans un moment");
-  if (r.status === 400) {
-    let m = ""; try { m = (await r.json()).error.message; } catch (e) {}
-    throw new ErreurClaire(/credit|billing|balance/i.test(m) ? "crédit IA épuisé sur ce compte" : `demande refusée par l'IA (${m.slice(0, 120)})`);
-  }
-  if (!r.ok) throw new ErreurClaire(`le service d'IA a répondu avec une erreur (${r.status})`);
-  const d = await r.json();
-  const bloc = (d.content || []).find((c) => c.type === "tool_use");
-  if (!bloc) throw new ErreurClaire("réponse de l'IA incomplète");
-  return bloc.input;
-}
-
-async function testerCleIA(cle) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": cle, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({ model: MODELE_IA, max_tokens: 5, messages: [{ role: "user", content: "Réponds seulement : OK" }] }),
-  }).catch(() => null);
-  if (!r) return { ok: false, message: "Impossible de joindre le service d'IA." };
-  if (r.ok) return { ok: true };
-  let m = ""; try { m = (await r.json()).error.message; } catch (e) {}
-  if (r.status === 401 || r.status === 403) return { ok: false, message: "Cette clé est refusée. Vérifiez qu'elle est complète et toujours active." };
-  if (/credit|billing|balance/i.test(m)) return { ok: false, message: "La clé est valide, mais le compte n'a plus de crédit." };
-  return { ok: false, message: `Erreur du service d'IA (${r.status}).` };
+// ---------------------------------------------------------------- IA (dans la page)
+// Le modèle d'IA tourne dans la page (WebGPU) : le travailleur lui envoie le texte à lire et attend sa réponse.
+const demandesIA = new Map();
+let prochaineIA = 1;
+function demanderIA(reqId, contexte) {
+  const idIA = prochaineIA++;
+  return new Promise((resolve, reject) => {
+    demandesIA.set(idIA, { resolve, reject });
+    envoyer({ type: "demande_ia", reqId, idIA, contexte });
+  });
 }
 
 async function correspondPyPI(nom, depot) {
@@ -228,11 +193,11 @@ async function installer(msg) {
     const regles = JSON.parse(reglesJson);
     let analyse = regles;
     const aDuPython = meta.fichiers.some(([p]) => p.endsWith(".py"));
-    if (msg.cleIA && aDuPython) {
+    if (msg.iaLocale && aDuPython) {
       try {
         journal("Analyse du projet par l'IA…");
         const contexte = moteur.contexte_ia(id, meta.depot, meta.description || "", reglesJson);
-        const reponse = await demanderIA(msg.cleIA, contexte);
+        const reponse = await demanderIA(msg.reqId, contexte);
         const v = JSON.parse(moteur.valider_ia(id, JSON.stringify(reponse), reglesJson));
         if (v.ok) { analyse = v.analyse; journal("L'IA a décrit l'interface."); }
         else if (v.ia) { analyse = { ok: false, raison: v.raison, description: regles.description }; journal(`L'IA estime que ce projet n'est pas utilisable : ${v.raison}`); }
@@ -334,7 +299,11 @@ onmessage = async (e) => {
   try {
     if (msg.type === "init") { await initialiser(); envoyer({ type: "fin", reqId: msg.reqId }); return; }
     if (msg.type === "installer") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await installer(msg) }); return; }
-    if (msg.type === "tester_ia") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await testerCleIA(msg.cle) }); return; }
+    if (msg.type === "reponse_ia") {
+      const d = demandesIA.get(msg.idIA);
+      if (d) { demandesIA.delete(msg.idIA); msg.erreur ? d.reject(new ErreurClaire(msg.erreur)) : d.resolve(msg.reponse); }
+      return;
+    }
     if (msg.type === "preparer") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await preparer(msg) }); return; }
     if (msg.type === "lancer") {
       await initialiser();

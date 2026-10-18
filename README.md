@@ -30,13 +30,15 @@ Autre option sans GitHub : https://app.netlify.com/drop permet de glisser le dos
 Un double-clic sur `index.html` **ne fonctionne pas** : les navigateurs interdisent à une page ouverte depuis un fichier de lancer Python en arrière-plan.
 Sous Windows, double-cliquez plutôt sur `Essayer-en-local.bat` (Python doit être installé) : la page s'ouvre à l'adresse http://localhost:8000.
 
-## L'intelligence artificielle (facultative)
+## L'intelligence artificielle gratuite (facultative)
 
-Dans la page « Intelligence artificielle » du site, chaque visiteur peut coller sa propre clé d'accès à Claude
-(obtenue sur https://console.anthropic.com). Passerelle envoie alors à l'IA le mode d'emploi et les fichiers de code
-clés de chaque projet ; l'IA décrit comment lancer l'outil et quels champs afficher, avec des textes en français.
-Sa réponse est vérifiée avant d'être utilisée (chemins existants, types de champs connus). Sans clé, ou si l'IA échoue,
-Passerelle utilise son analyse automatique. La clé reste dans le navigateur du visiteur et n'est envoyée qu'à Claude.
+Dans la page « Intelligence artificielle » du site, chaque visiteur peut télécharger une IA open source
+(Qwen2.5-Coder 3B, environ 2 Go, une seule fois) qui tourne **dans son navigateur**, grâce à WebLLM et WebGPU.
+Aucune clé, aucun compte, aucun serveur : rien n'est envoyé sur Internet. À l'installation d'un projet, l'IA lit
+le mode d'emploi et les parties du code qui lisent les arguments, puis décrit comment lancer l'outil et quels champs
+afficher, avec des textes en français. Sa réponse est vérifiée avant d'être utilisée (fichiers existants, types de
+champs connus) ; si elle n'est pas fiable, Passerelle utilise son analyse automatique.
+Nécessite Chrome ou Edge à jour sur un ordinateur avec une carte graphique compatible WebGPU.
 
 ## Ce qui fonctionne
 
@@ -67,7 +69,7 @@ Projets conseillés pour une démonstration : `lincolnloop/python-qrcode`, `pwal
 | `index.html` | Interface (pages, formulaires générés, résultats) et mémoire du navigateur |
 | `travailleur.js` | Tourne en arrière-plan : charge Pyodide, récupère le dépôt via l'API GitHub, orchestre analyse, installation et lancement |
 | `py/moteur.py` | Côté Python : installation avec micropip, exécution de l'outil dans la page, capture de ce qu'il affiche et produit |
-| `ia-consignes.js` | Consignes et format de réponse demandés à l'IA |
+| `ia-consignes.js` | Modèle d'IA utilisé, consignes et format de réponse imposé |
 | `py/ia.py` | Prépare ce que l'IA doit lire et vérifie sa réponse |
 | `py/analyseur.py` | Lit le code du dépôt sans l'exécuter et en déduit les actions et les options (le même que la version Windows) |
 | `py/executeur.py`, `py/installeur.py` | Fonctions partagées avec la version Windows (construction des arguments, lecture des dépendances) |

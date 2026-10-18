@@ -303,7 +303,7 @@ def resultats(dossier_job):
 
 def contexte_ia(id_app, depot, description_github, regles_json):
     import ia
-    return ia.contexte(dossier_code(id_app), depot, description_github, regles_json)
+    return ia.contexte(dossier_code(id_app), depot, description_github, regles_json, "local")
 
 
 def valider_ia(id_app, reponse_json, regles_json):

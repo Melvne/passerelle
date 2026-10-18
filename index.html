@@ -123,6 +123,7 @@ pre.sortie-texte{background:var(--surface);color:var(--encre);border:1px solid v
   <main id="page" tabindex="-1"></main>
 </div>
 
+<script src="ia-consignes.js?v=5"></script>
 <script>
 "use strict";
 const $page = document.getElementById("page");
@@ -159,9 +160,48 @@ const idDe = (depot) => depot.toLowerCase().replace("/", "__").replace(/[^\w.\-]
 
 // ================================================================ mémoire du navigateur
 const CLE = "passerelle.applications.v1";
-const CLE_IA = "passerelle.cle_ia";
-function lireCleIA() { try { return localStorage.getItem(CLE_IA) || ""; } catch (e) { return ""; } }
-function ecrireCleIA(v) { try { if (v) localStorage.setItem(CLE_IA, v); else localStorage.removeItem(CLE_IA); return true; } catch (e) { return false; } }
+const CLE_IA = "passerelle.ia";
+function iaActive() { try { return localStorage.getItem(CLE_IA) === "active"; } catch (e) { return false; } }
+function activerIA(oui) { try { if (oui) localStorage.setItem(CLE_IA, "active"); else localStorage.removeItem(CLE_IA); } catch (e) {} }
+
+// ================================================================ IA gratuite (WebLLM, dans ce navigateur)
+let webllm = null, moteurIA = null, chargementIA = null, modeleIA = null;
+async function compatibiliteIA() {
+  if (!navigator.gpu) return { ok: false, raison: "Ce navigateur ne permet pas encore à une IA d'utiliser la carte graphique (WebGPU). Utilisez Chrome ou Edge à jour sur ordinateur." };
+  let adaptateur = null;
+  try { adaptateur = await navigator.gpu.requestAdapter(); } catch (e) {}
+  if (!adaptateur) return { ok: false, raison: "Aucune carte graphique compatible n'a été trouvée sur cet appareil." };
+  return { ok: true, f16: adaptateur.features.has("shader-f16") };
+}
+function chargerIA(progression) {
+  if (moteurIA) return Promise.resolve(moteurIA);
+  if (!chargementIA) {
+    chargementIA = (async () => {
+      const c = await compatibiliteIA();
+      if (!c.ok) throw new Error(c.raison);
+      webllm = webllm || await import(IA_WEBLLM);
+      modeleIA = c.f16 ? IA_MODELE_F16 : IA_MODELE_F32;
+      moteurIA = await webllm.CreateMLCEngine(modeleIA,
+        { initProgressCallback: (p) => (chargementIA.ecouteurs || []).forEach((f) => f(p)) },
+        { context_window_size: IA_CONTEXTE });
+      return moteurIA;
+    })().catch((e) => { chargementIA = null; throw e; });
+    chargementIA.ecouteurs = [];
+  }
+  if (progression) chargementIA.ecouteurs.push(progression);
+  return chargementIA;
+}
+async function analyserAvecIA(contexte, progression) {
+  const moteur = await chargerIA(progression);
+  progression && progression({ text: "L'IA lit le projet…", progress: 1, lecture: true });
+  const r = await moteur.chat.completions.create({
+    messages: [{ role: "system", content: CONSIGNES_IA }, { role: "user", content: contexte }],
+    response_format: { type: "json_object", schema: JSON.stringify(SCHEMA_IA) },
+    temperature: 0.1, max_tokens: 1800,
+  });
+  await moteur.resetChat();
+  return JSON.parse(r.choices[0].message.content);
+}
 function chargerApps() { try { return JSON.parse(localStorage.getItem(CLE) || "{}"); } catch (e) { return {}; } }
 let APPS = chargerApps();
 function sauver() {
@@ -183,7 +223,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=4");
+  travailleur = new Worker("travailleur.js?v=5");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);
@@ -249,7 +289,7 @@ function vueAccueil() {
       </div>
       <div id="msg-lien" class="erreur" role="alert" hidden></div>
       <p class="aide" style="margin:0">Fonctionne avec les outils écrits en Python et compatibles avec le navigateur.
-        ${lireCleIA() ? `<strong style="color:var(--vert)">L'IA est activée</strong> : elle lit chaque projet pour créer une interface en français.` : `<a href="#/reglages">Activez l'IA</a> pour comprendre beaucoup plus de projets et obtenir une interface en français.`}</p>
+        ${iaActive() ? `<strong style="color:var(--vert)">L'IA gratuite est activée</strong> : elle lit chaque projet pour créer une interface en français.` : `<a href="#/reglages">Activez l'IA gratuite</a> pour comprendre plus de projets et obtenir une interface en français.`}</p>
     </form>
     <section style="display:flex;flex-direction:column;gap:16px">
       <h2 class="h2">Essayez avec un de ces outils</h2>
@@ -291,8 +331,17 @@ function demarrerInstallation(id, depot) {
   const suivi = { etapes: ETAPES.map(([cle, titre]) => ({ cle, titre, etat: "attente" })), journal: [] };
   installations.set(id, suivi);
   const rafraichir = () => { if (location.hash === `#/installation/${id}`) dessinerInstallation(id); };
-  demander("installer", { id, depot, cleIA: lireCleIA() }, (m) => {
+  demander("installer", { id, depot, iaLocale: iaActive() }, (m) => {
     if (m.type === "avertissement_ia") suivi.alerteIA = m.message;
+    if (m.type === "demande_ia") {
+      const ligne = suivi.journal.push("Préparation de l'IA…") - 1;
+      analyserAvecIA(m.contexte, (p) => {
+        suivi.journal[ligne] = p.lecture ? "L'IA lit le projet et décrit l'interface… (cela peut prendre une à deux minutes)"
+          : `Chargement de l'IA : ${Math.round((p.progress || 0) * 100)} %`;
+        rafraichir();
+      }).then((reponse) => travailleur && travailleur.postMessage({ type: "reponse_ia", idIA: m.idIA, reponse }))
+        .catch((e) => travailleur && travailleur.postMessage({ type: "reponse_ia", idIA: m.idIA, erreur: String(e.message || e).slice(0, 200) }));
+    }
     if (m.type === "etape") { const e = suivi.etapes.find((x) => x.cle === m.cle); if (e) { e.etat = m.etat; if (m.detail) e.detail = m.detail; } }
     if (m.type === "journal") { suivi.journal.push(m.ligne); if (suivi.journal.length > 400) suivi.journal.shift(); }
     rafraichir();
@@ -356,7 +405,7 @@ function dessinerInstallation(id) {
         </div>
       </li>`).join("")}
     </ol>
-    ${suivi.alerteIA ? `<div class="alerte">L'IA n'a pas pu être utilisée (${echap(suivi.alerteIA)}). Passerelle a utilisé son analyse automatique à la place. <a href="#/reglages">Vérifier les réglages</a></div>` : ""}
+    ${suivi.alerteIA ? `<div class="alerte">L'IA n'a pas pu être utilisée (${echap(suivi.alerteIA)}). Passerelle a utilisé son analyse automatique à la place.</div>` : ""}
     ${d.statut === "erreur" ? `<div class="erreur" role="alert">${echap(d.erreur || "Une erreur s'est produite.")}</div>` : ""}
     ${d.statut === "incomplet" ? `<div class="alerte">Certaines bibliothèques de ce projet ne fonctionnent pas dans un navigateur (${echap((d.problemes || []).join(", "))}). L'application peut quand même marcher en partie : essayez-la.</div>` : ""}
     ${suivi.journal.length ? `<details class="technique" ${ouvert ? "open" : ""}><summary>Détails techniques</summary><pre class="journal" id="journal">${echap(suivi.journal.join("\n"))}</pre></details>` : ""}
@@ -590,10 +639,9 @@ function vueApplication(id) {
 }
 
 // ================================================================ réglages (IA)
-function vueReglages() {
+async function vueReglages() {
   marquerMenu("reglages");
-  const cle = lireCleIA();
-  const masque = cle ? `${cle.slice(0, 10)}…${cle.slice(-4)}` : "";
+  const active = iaActive();
   $page.innerHTML = `
   <div class="contenu etroit">
     <div style="display:flex;flex-direction:column;gap:10px">
@@ -601,44 +649,57 @@ function vueReglages() {
       <p class="sous-titre" style="font-size:16px">Avec l'IA, Passerelle lit le code et le mode d'emploi de chaque projet pour créer une interface plus juste, avec des textes en français. Elle comprend aussi des projets que l'analyse automatique ne sait pas lire.</p>
     </div>
     <section class="carte" style="display:flex;flex-direction:column;gap:14px">
-      <h2 class="h2">Clé d'accès à Claude</h2>
-      ${cle ? `<div class="info">L'IA est activée avec la clé <span class="mono" style="color:inherit">${echap(masque)}</span>.</div>` : `<div class="alerte">L'IA n'est pas activée : Passerelle utilise son analyse automatique, limitée aux projets bien structurés.</div>`}
-      <form id="form-cle" style="display:flex;flex-direction:column;gap:10px">
-        <label for="cle-ia" class="titre-champ" style="margin:0">${cle ? "Remplacer la clé" : "Votre clé"}</label>
-        <input id="cle-ia" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" style="font-family:var(--mono)">
-        <div id="msg-cle" role="status" hidden></div>
-        <div class="ligne">
-          <button class="bouton" type="submit">Vérifier et enregistrer</button>
-          ${cle ? `<button class="bouton danger" type="button" id="retirer-cle">Retirer la clé</button>` : ""}
-        </div>
-      </form>
+      <h2 class="h2">IA gratuite sur cet ordinateur</h2>
+      <p style="margin:0;color:var(--doux)">Un modèle d'IA open source (Qwen2.5-Coder) est téléchargé une seule fois, puis tourne directement sur votre ordinateur, grâce à sa carte graphique. Gratuit, sans compte, et rien n'est envoyé sur Internet.</p>
+      <div id="etat-ia" role="status"><div class="info">Vérification de la compatibilité de cet ordinateur…</div></div>
+      <div id="progres-ia" hidden><div class="barre" role="progressbar" aria-label="Téléchargement de l'IA" aria-valuemin="0" aria-valuemax="100"><div style="width:0%"></div></div><p class="aide" id="texte-progres-ia" style="margin:6px 0 0"></p></div>
+      <div class="ligne" id="actions-ia"></div>
     </section>
-    <section class="carte" style="display:flex;flex-direction:column;gap:10px">
-      <h2 class="h2">Comment obtenir une clé</h2>
-      <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--doux)">
-        <li>Créez un compte sur la console Claude : <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>.</li>
-        <li>Ajoutez un peu de crédit (l'analyse d'un projet coûte en général quelques centimes).</li>
-        <li>Dans « API Keys », créez une clé, copiez-la et collez-la ci-dessus.</li>
-      </ol>
-      <p class="aide" style="margin:0">La clé reste dans ce navigateur. Elle n'est envoyée qu'au service d'IA de Claude, au moment d'analyser un projet. Ne la partagez avec personne.</p>
+    <section class="carte" style="display:flex;flex-direction:column;gap:8px">
+      <h2 class="h2">Bon à savoir</h2>
+      <ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--doux)">
+        <li>Le premier téléchargement pèse environ ${IA_TAILLE_GO} Go. Ensuite, le navigateur garde l'IA : les visites suivantes la chargent en quelques secondes.</li>
+        <li>L'IA sert uniquement à l'installation d'un projet (environ une à deux minutes), pas à chaque utilisation.</li>
+        <li>C'est une petite IA : elle peut se tromper sur des projets complexes. Passerelle vérifie sa réponse et utilise son analyse automatique si elle n'est pas fiable.</li>
+      </ul>
     </section>
   </div>`;
-  const msg = document.getElementById("msg-cle");
-  const dire = (texte, ok) => { msg.className = ok ? "info" : "erreur"; msg.textContent = texte; msg.hidden = false; };
-  document.getElementById("form-cle").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const v = document.getElementById("cle-ia").value.trim();
-    if (!v) { dire("Collez d'abord votre clé.", false); return; }
-    const b = e.submitter || e.target.querySelector("button[type=submit]");
-    b.disabled = true; b.textContent = "Vérification…";
-    try {
-      const r = await demander("tester_ia", { cle: v });
-      if (r.ok) { ecrireCleIA(v); vueReglages(); document.getElementById("msg-cle").hidden = false; document.getElementById("msg-cle").className = "info"; document.getElementById("msg-cle").textContent = "Clé vérifiée et enregistrée. Les prochains projets seront analysés par l'IA."; }
-      else dire(r.message, false);
-    } catch (err) { dire(err.message, false); }
-    b.disabled = false; b.textContent = "Vérifier et enregistrer";
+  const etat = document.getElementById("etat-ia"), actions = document.getElementById("actions-ia");
+  const c = await compatibiliteIA();
+  if (!document.body.contains(etat)) return;
+  if (!c.ok) { etat.innerHTML = `<div class="erreur">${echap(c.raison)}</div>`; return; }
+  if (active) {
+    etat.innerHTML = `<div class="info"><strong>L'IA gratuite est activée.</strong> Elle analysera les prochains projets que vous installerez.</div>`;
+    actions.innerHTML = `<button class="bouton secondaire" type="button" id="desactiver-ia">Désactiver l'IA</button><button class="bouton danger" type="button" id="supprimer-ia">Désactiver et supprimer le modèle téléchargé</button>`;
+  } else {
+    etat.innerHTML = `<div class="alerte">L'IA n'est pas activée : Passerelle utilise son analyse automatique, limitée aux projets bien structurés.</div>`;
+    actions.innerHTML = `<button class="bouton" type="button" id="activer-ia">Télécharger et activer l'IA gratuite (environ ${IA_TAILLE_GO} Go)</button>`;
+  }
+  document.getElementById("desactiver-ia")?.addEventListener("click", () => { activerIA(false); vueReglages(); });
+  document.getElementById("supprimer-ia")?.addEventListener("click", async (ev) => {
+    ev.target.disabled = true;
+    activerIA(false);
+    try { webllm = webllm || await import(IA_WEBLLM); for (const m of [IA_MODELE_F16, IA_MODELE_F32]) await webllm.deleteModelAllInfoInCache(m); } catch (e) {}
+    moteurIA = null; chargementIA = null; vueReglages();
   });
-  document.getElementById("retirer-cle")?.addEventListener("click", () => { ecrireCleIA(""); vueReglages(); });
+  document.getElementById("activer-ia")?.addEventListener("click", async (ev) => {
+    const b = ev.target; b.disabled = true; b.textContent = "Téléchargement en cours… gardez cette page ouverte";
+    const zone = document.getElementById("progres-ia"); zone.hidden = false;
+    try {
+      await chargerIA((p) => {
+        const pct = Math.round((p.progress || 0) * 100);
+        const barre = zone.querySelector(".barre");
+        if (!barre) return;
+        barre.firstElementChild.style.width = pct + "%"; barre.setAttribute("aria-valuenow", pct);
+        document.getElementById("texte-progres-ia").textContent = `${pct} %`;
+      });
+      activerIA(true);
+      vueReglages();
+    } catch (e) {
+      etat.innerHTML = `<div class="erreur">L'IA n'a pas pu être téléchargée ou démarrée : ${echap(String(e.message || e).slice(0, 200))}</div>`;
+      b.disabled = false; b.textContent = `Réessayer`;
+    }
+  });
 }
 
 // ================================================================ bibliothèque
