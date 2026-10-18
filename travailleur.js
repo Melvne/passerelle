@@ -191,8 +191,11 @@ async function installer(msg) {
     const res = await etapeInstallation();
     const bloquants = res.problemes.filter((p) => LOURDS.test(p));
     if (bloquants.length) {
-      const noms = bloquants.map((p) => p.split(/[<>=!~ ;\[]/)[0]).join(", ");
-      const raison = `Cet outil a besoin de ${noms}, qui ne peut pas fonctionner dans un navigateur (bibliothèque trop lourde ou liée au système). Utilisez la version Windows de Passerelle pour ce projet.`;
+      const liste = [...new Set(bloquants.map((p) => p.split(/[<>=!~ ;\[]/)[0]))];
+      const noms = liste.length > 1 ? `${liste.slice(0, -1).join(", ")} et ${liste[liste.length - 1]}` : liste[0];
+      const raison = liste.length > 1
+        ? `Cet outil a besoin de ${noms}, qui ne peuvent pas fonctionner dans un navigateur (bibliothèques trop lourdes ou liées au système). Utilisez la version Windows de Passerelle pour ce projet.`
+        : `Cet outil a besoin de ${noms}, qui ne peut pas fonctionner dans un navigateur (bibliothèque trop lourde ou liée au système). Utilisez la version Windows de Passerelle pour ce projet.`;
       etape("installation", "erreur", raison);
       return { ok: false, raison, description: meta.description || analyse.description };
     }
