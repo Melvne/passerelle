@@ -258,6 +258,17 @@ def valider(racine, reponse_json, regles_json):
                        "aide": _texte(o.get("aide"), "", 300)})
     if not outils:
         return json.dumps({"ok": False, "raison": "L'IA n'a décrit aucune action utilisable."})
+    if len(outils) > 1 and not any(o["prefixe"] for o in outils):
+        # Petite IA : elle range parfois chaque option dans une « action » séparée alors que le programme
+        # n'a pas de sous-commandes. Toutes ces options vont ensemble : on les regroupe dans un seul formulaire.
+        params, vus = [], set()
+        for o in outils:
+            for p in o["params"]:
+                if p["nom"] not in vus:
+                    vus.add(p["nom"])
+                    params.append(p)
+        params.sort(key=lambda p: (not p["avant"], not p["positionnel"]))
+        outils = [{"nom": "", "prefixe": [], "params": params, "libelle": "Utiliser l'outil", "aide": ""}]
 
     analyse = {
         "ok": True, "source": "ia",

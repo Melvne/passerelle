@@ -123,7 +123,7 @@ pre.sortie-texte{background:var(--surface);color:var(--encre);border:1px solid v
   <main id="page" tabindex="-1"></main>
 </div>
 
-<script src="ia-consignes.js?v=5"></script>
+<script src="ia-consignes.js?v=6"></script>
 <script>
 "use strict";
 const $page = document.getElementById("page");
@@ -181,10 +181,22 @@ function chargerIA(progression) {
       if (!c.ok) throw new Error(c.raison);
       webllm = webllm || await import(IA_WEBLLM);
       modeleIA = c.f16 ? IA_MODELE_F16 : IA_MODELE_F32;
-      moteurIA = await webllm.CreateMLCEngine(modeleIA,
-        { initProgressCallback: (p) => (chargementIA.ecouteurs || []).forEach((f) => f(p)) },
-        { context_window_size: IA_CONTEXTE });
-      return moteurIA;
+      // Le téléchargement se fait en morceaux gardés par le navigateur : après une coupure, on reprend où on en était
+      let derniere = null;
+      for (let essai = 1; essai <= 4; essai++) {
+        try {
+          moteurIA = await webllm.CreateMLCEngine(modeleIA,
+            { initProgressCallback: (p) => (chargementIA.ecouteurs || []).forEach((f) => f(p)) },
+            { context_window_size: IA_CONTEXTE });
+          return moteurIA;
+        } catch (e) {
+          derniere = e;
+          if (!/network|fetch|Cache/i.test(String(e && e.message || e))) throw e;
+          (chargementIA.ecouteurs || []).forEach((f) => f({ progress: 0, text: `Connexion interrompue, nouvel essai (${essai}/3)…` }));
+          await new Promise((r) => setTimeout(r, 3000 * essai));
+        }
+      }
+      throw derniere;
     })().catch((e) => { chargementIA = null; throw e; });
     chargementIA.ecouteurs = [];
   }
@@ -223,7 +235,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=5");
+  travailleur = new Worker("travailleur.js?v=6");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);
@@ -691,7 +703,7 @@ async function vueReglages() {
         const barre = zone.querySelector(".barre");
         if (!barre) return;
         barre.firstElementChild.style.width = pct + "%"; barre.setAttribute("aria-valuenow", pct);
-        document.getElementById("texte-progres-ia").textContent = `${pct} %`;
+        document.getElementById("texte-progres-ia").textContent = /essai/.test(p.text || "") ? p.text : `${pct} %`;
       });
       activerIA(true);
       vueReglages();

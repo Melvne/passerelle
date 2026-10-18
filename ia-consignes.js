@@ -19,7 +19,7 @@ Answer with JSON only:
   {"type":"script","nom":<command>,"module":<python module like pkg.cli>,"fonction":<function like main>} for [project.scripts]/console_scripts entries,
   or {"type":"module","module":<module with __main__>},
   or {"type":"fichier","fichier":<path of a .py file>}.
-- "outils": one item per action (one per sub-command, with "prefixe" = sub-command words; otherwise one item with "prefixe": []).
+- "outils": if the program has NO sub-commands, exactly ONE item with "prefixe": [] that contains ALL the arguments. Only if it has sub-commands (like "git commit"), one item per sub-command with "prefixe" = the sub-command words.
   Each item: "libelle" (short French), "aide" (French), "params": the useful arguments, each with:
   "nom" (identifier), "positionnel" (true if given without flag, in order), "drapeau" (real flag like "--output", "" if positional),
   "genre": one of "fichier" (input file), "dossier" (input folder), "sortie" (output file name), "sortie_dossier", "case" (flag without value), "choix" (fixed values, give "choix"), "entier", "nombre", "texte",
