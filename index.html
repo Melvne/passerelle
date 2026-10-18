@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passerelle</title>
+<meta name="description" content="Transformez un projet GitHub en application, directement dans votre navigateur, sans rien installer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Mise en page : menu latéral fixe + contenu ; couleurs « atelier » vert sapin sur gris tilleul */
+:root{
+  --fond:#F5F6F4; --surface:#FFFFFF; --encre:#15171A; --doux:#575C63; --bord:#E2E4E1; --bord-fort:#CDD1CC;
+  --vert:#17694F; --vert-fonce:#0F4D39; --vert-pale:#E4F1EC; --orange:#A4481A; --orange-pale:#FBEDE3; --orange-texte:#5E2A0E;
+  --rouge:#A3261B; --rouge-pale:#FBE7E4; --rouge-texte:#6E1A12; --bleu:#2F4FA3; --bleu-pale:#E6ECF8; --bleu-texte:#233D80;
+  --damier:#EEF0ED; --console:#16181C; --console-texte:#D9DED8;
+  --titre:'Bricolage Grotesque', 'Segoe UI', sans-serif; --texte:'Figtree', 'Segoe UI', system-ui, sans-serif;
+  --mono: ui-monospace, Consolas, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --fond:#111412; --surface:#1A1E1C; --encre:#E9ECE9; --doux:#A6ADA8; --bord:#2B312E; --bord-fort:#3C443F;
+    --vert:#4FB38F; --vert-fonce:#7ACCAE; --vert-pale:#1C3029; --orange:#E39A6E; --orange-pale:#33241A; --orange-texte:#F2C9AE;
+    --rouge:#F0877C; --rouge-pale:#3A1D1A; --rouge-texte:#F6C1BB; --bleu:#8FA8EA; --bleu-pale:#1D2438; --bleu-texte:#C3D0F5;
+    --damier:#232826; --console:#0B0D0C; color-scheme: dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fond);color:var(--encre);font-family:var(--texte);font-size:16px;line-height:1.5}
+a{color:var(--vert)} a:hover{color:var(--vert-fonce)}
+h1,h2,h3{font-family:var(--titre);margin:0;line-height:1.15;text-wrap:balance}
+.cadre{min-height:100vh;display:flex;flex-wrap:wrap}
+nav.menu{flex:1 1 220px;max-width:260px;background:var(--surface);border-right:1px solid var(--bord);padding:28px 16px;display:flex;flex-direction:column;gap:6px}
+.logo{display:flex;align-items:center;gap:10px;padding:0 10px 24px;font-family:var(--titre);font-weight:700;font-size:22px;color:var(--encre);text-decoration:none}
+.logo .pastille{width:36px;height:36px;border-radius:10px;background:var(--vert);color:var(--surface);display:flex;align-items:center;justify-content:center}
+.lien-menu{display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 14px;border-radius:10px;text-decoration:none;color:var(--encre);font-weight:500}
+.lien-menu[aria-current="page"]{background:var(--vert-pale);color:var(--vert-fonce);font-weight:600}
+.lien-menu:hover{background:var(--fond);color:var(--encre)}
+.etat-python{margin-top:auto;display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:var(--fond);font-size:13px;color:var(--doux)}
+.voyant{width:10px;height:10px;border-radius:50%;background:var(--bord-fort);flex-shrink:0}
+.voyant.pret{background:var(--vert)} .voyant.chargement{background:var(--orange);animation:clignote 1s ease-in-out infinite} .voyant.erreur{background:var(--rouge)}
+@keyframes clignote{50%{opacity:.35}}
+main{flex:999 1 560px;min-width:0;padding-block:48px;padding-left:max(16px,5%);padding-right:max(16px,5%)}
+.contenu{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+.etroit{max-width:760px}
+.carte{background:var(--surface);border:1px solid var(--bord);border-radius:18px;padding:26px}
+.sous-titre{margin:0;font-size:18px;color:var(--doux);max-width:660px}
+.h1{font-size:44px;font-weight:700;letter-spacing:-.02em}
+.h2{font-size:22px;font-weight:600}
+label.titre-champ{display:block;font-weight:600;font-size:15px;margin-bottom:6px}
+.aide{font-size:13.5px;color:var(--doux);margin-top:6px}
+input[type=text],input[type=url],input[type=number],input[type=search],select,textarea{
+  width:100%;min-height:48px;padding:10px 14px;border:1.5px solid var(--bord-fort);border-radius:12px;font:inherit;font-size:15px;background:var(--surface);color:var(--encre)}
+textarea{min-height:90px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var(--vert);outline-offset:2px}
+input[type=file]{font:inherit;font-size:14px;max-width:100%;color:var(--encre)}
+.bouton{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:0 22px;border-radius:12px;border:none;background:var(--vert);color:var(--surface);font:inherit;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none}
+.bouton:hover{background:var(--vert-fonce);color:var(--surface)}
+.bouton:disabled{opacity:.55;cursor:wait}
+.bouton.secondaire{background:var(--surface);color:var(--encre);border:1.5px solid var(--bord-fort)}
+.bouton.secondaire:hover{background:var(--fond);color:var(--encre)}
+.bouton.danger{background:var(--surface);color:var(--rouge);border:1.5px solid var(--rouge)}
+.ligne{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.tuile{display:flex;flex-direction:column;gap:10px;padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--bord);text-align:left;font:inherit;color:var(--encre);cursor:pointer;text-decoration:none}
+.tuile:hover{border-color:var(--vert);color:var(--encre)}
+.icone{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mono{font-family:var(--mono);font-size:12.5px;color:var(--doux);word-break:break-all}
+.erreur{padding:14px 16px;border-radius:12px;background:var(--rouge-pale);color:var(--rouge-texte);font-size:15px}
+.info{padding:14px 16px;border-radius:12px;background:var(--vert-pale);color:var(--vert-fonce);font-size:14.5px}
+.alerte{padding:14px 16px;border-radius:12px;background:var(--orange-pale);color:var(--orange-texte);font-size:14.5px}
+.etapes{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--bord);border-radius:18px;overflow:hidden}
+.etapes li{display:flex;gap:16px;align-items:flex-start;padding:18px 22px;border-bottom:1px solid var(--bord)}
+.etapes li:last-child{border-bottom:none}
+.puce{flex-shrink:0;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--bord-fort);color:var(--surface)}
+.puce.fait{background:var(--vert);border-color:var(--vert)}
+.puce.en_cours{border:3px solid var(--vert);border-top-color:transparent;animation:tourne .9s linear infinite}
+.puce.erreur{background:var(--rouge);border-color:var(--rouge)}
+@keyframes tourne{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.puce.en_cours,.voyant.chargement{animation:none}}
+.barre{height:10px;border-radius:999px;background:var(--bord);overflow:hidden}
+.barre>div{height:100%;background:var(--vert);border-radius:999px;transition:width .5s}
+details.technique summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--doux);min-height:32px}
+pre.journal{background:var(--console);color:var(--console-texte);border-radius:12px;padding:14px;font-family:var(--mono);font-size:12.5px;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:10px 0 0}
+pre.sortie-texte{background:var(--surface);color:var(--encre);border:1px solid var(--bord);border-radius:12px;padding:16px;font-family:var(--mono);font-size:13px;overflow:auto;white-space:pre;margin:0;max-height:420px;line-height:1.25}
+.deux-colonnes{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.deux-colonnes>.carte{flex:1 1 360px;min-width:0}
+.champ{display:flex;flex-direction:column}
+.case{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+.case input{width:22px;height:22px;margin:2px 0 0;accent-color:var(--vert);flex-shrink:0}
+.actions-choix{display:flex;flex-wrap:wrap;gap:10px}
+.choix-action{min-height:44px;padding:10px 16px;border-radius:12px;border:1.5px solid var(--bord-fort);background:var(--surface);font:inherit;font-weight:600;cursor:pointer;text-align:left;color:var(--encre)}
+.choix-action[aria-pressed="true"]{border-color:var(--vert);background:var(--vert-pale);color:var(--vert-fonce)}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:600}
+.badge.pret{background:var(--vert-pale);color:var(--vert-fonce)}
+.badge.incomplet{background:var(--orange-pale);color:var(--orange-texte)}
+.badge.erreur{background:var(--rouge-pale);color:var(--rouge-texte)}
+.badge.installation{background:var(--bleu-pale);color:var(--bleu-texte)}
+.zone-resultat{min-height:240px;border-radius:14px;border:1px solid var(--bord);background-color:var(--surface);background-image:repeating-conic-gradient(var(--damier) 0% 25%,var(--surface) 0% 50%);background-size:22px 22px;display:flex;align-items:center;justify-content:center;padding:18px;flex-direction:column;gap:12px;text-align:center}
+.zone-resultat img{max-width:100%;max-height:420px;border-radius:8px}
+.fichier-resultat{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--bord);border-radius:12px;background:var(--surface)}
+.vide{text-align:center;color:var(--doux);padding:40px 20px}
+.confirmer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+@media (max-width:700px){
+  .h1{font-size:34px}
+  nav.menu{max-width:none;flex-basis:100%;flex-direction:row;flex-wrap:wrap;align-items:center;padding:12px 16px;border-right:none;border-bottom:1px solid var(--bord)}
+  .logo{padding:0 10px 0 0;flex-basis:100%}
+  .etat-python{margin-top:0;flex-basis:100%}
+  main{padding-block:28px}
+}
+</style>
+</head>
+<body>
+<div class="cadre">
+  <nav class="menu" aria-label="Navigation principale">
+    <a class="logo" href="#/"><span class="pastille" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg></span>Passerelle</a>
+    <a class="lien-menu" href="#/" data-page="accueil"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Accueil</a>
+    <a class="lien-menu" href="#/bibliotheque" data-page="bibliotheque"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mes applications</a>
+    <div class="etat-python" role="status"><span class="voyant" id="voyant"></span><span id="texte-python">Python n'est pas encore chargé</span></div>
+  </nav>
+  <main id="page" tabindex="-1"></main>
+</div>
+
+<script>
+"use strict";
+const $page = document.getElementById("page");
+let minuteur = null;
+
+// ================================================================ outils
+const echap = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ICONES = {
+  fleche: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>',
+  retour: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg>',
+  coche: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
+  croix: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  boite: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
+  qr: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v1M14 20h1M18 18h3v3"/></svg>',
+  texte: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>',
+  page: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/><path d="M8 14h8M8 18h5"/></svg>',
+  telecharger: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>',
+};
+const SUGGESTIONS = [
+  { lien: "https://github.com/lincolnloop/python-qrcode", titre: "Créer un QR code", texte: "Transforme un lien ou un texte en QR code à imprimer ou partager.", icone: "qr", fond: "var(--vert-pale)", coul: "var(--vert)" },
+  { lien: "https://github.com/pwaller/pyfiglet", titre: "Écrire en grandes lettres", texte: "Transforme un mot en grand texte décoratif fait de caractères.", icone: "texte", fond: "var(--bleu-pale)", coul: "var(--bleu)" },
+  { lien: "https://github.com/Python-Markdown/markdown", titre: "Convertir un texte Markdown en page web", texte: "Transforme un fichier .md (texte mis en forme) en page HTML.", icone: "page", fond: "var(--orange-pale)", coul: "var(--orange)" },
+];
+const STATUTS = { pret: "Prête", incomplet: "Installée avec des soucis", erreur: "Problème", installation: "En cours d'installation" };
+const ETAPES = [["telechargement", "Télécharger le projet"], ["analyse", "Comprendre le projet"], ["installation", "Installer dans le navigateur"], ["interface", "Créer l'interface"]];
+
+function lireLien(texte) {
+  const t = (texte || "").trim();
+  const m = t.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.\-]+)\/([\w.\-]+?)(?:\.git)?(?:[\/?#].*)?$/i) || t.match(/^([\w.\-]+)\/([\w.\-]+?)(?:\.git)?$/);
+  if (!m) throw new Error("Ce lien ne ressemble pas à un dépôt GitHub. Exemple attendu : https://github.com/nom/projet");
+  return `${m[1]}/${m[2]}`;
+}
+const idDe = (depot) => depot.toLowerCase().replace("/", "__").replace(/[^\w.\-]/g, "_");
+
+// ================================================================ mémoire du navigateur
+const CLE = "passerelle.applications.v1";
+function chargerApps() { try { return JSON.parse(localStorage.getItem(CLE) || "{}"); } catch (e) { return {}; } }
+let APPS = chargerApps();
+function sauver() {
+  try { localStorage.setItem(CLE, JSON.stringify(APPS)); }
+  catch (e) { /* mémoire pleine ou désactivée : l'application reste utilisable pendant cette visite */ }
+}
+for (const a of Object.values(APPS)) if (a.statut === "installation") { a.statut = "erreur"; a.erreur = "L'installation a été interrompue (la page a été fermée ou rechargée). Relancez-la."; }
+sauver();
+
+// ================================================================ travailleur (Python en arrière-plan)
+let travailleur = null, prochaineReq = 1;
+const attentes = new Map();
+const preparees = new Set();      // applications prêtes à l'emploi dans cette visite
+const installations = new Map();  // suivi en direct des installations en cours
+
+function majPython(etat, message) {
+  const v = document.getElementById("voyant"), t = document.getElementById("texte-python");
+  v.className = `voyant ${etat}`;
+  t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
+}
+function creerTravailleur() {
+  travailleur = new Worker("travailleur.js");
+  travailleur.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === "python") return majPython(m.etat, m.message);
+    const a = attentes.get(m.reqId);
+    if (!a) return;
+    if (m.type === "fin") { attentes.delete(m.reqId); a.resolve(m.resultat); }
+    else if (m.type === "erreur") { attentes.delete(m.reqId); a.reject(new Error(m.message)); }
+    else if (a.surMessage) a.surMessage(m);
+  };
+  travailleur.onerror = (e) => {
+    majPython("erreur", "le moteur s'est arrêté");
+    for (const a of attentes.values()) a.reject(new Error("Le moteur Python s'est arrêté de façon inattendue. Rechargez la page."));
+    attentes.clear();
+  };
+}
+function demander(type, donnees = {}, surMessage = null, transfert = []) {
+  if (!travailleur) creerTravailleur();
+  const reqId = prochaineReq++;
+  return new Promise((resolve, reject) => {
+    attentes.set(reqId, { resolve, reject, surMessage });
+    travailleur.postMessage({ type, reqId, ...donnees }, transfert);
+  });
+}
+function arreterTravailleur() {
+  if (travailleur) travailleur.terminate();
+  travailleur = null;
+  for (const a of attentes.values()) a.reject(new Error("Arrêté à votre demande."));
+  attentes.clear();
+  preparees.clear();
+  majPython("arret");
+}
+
+function marquerMenu(nom) {
+  document.querySelectorAll(".lien-menu").forEach((a) => { if (a.dataset.page === nom) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+}
+
+// ================================================================ navigation
+function router() {
+  clearInterval(minuteur); minuteur = null;
+  const [, vue, id] = (location.hash || "#/").split("/");
+  if (vue === "installation" && id) return vueInstallation(decodeURIComponent(id));
+  if (vue === "app" && id) return vueApplication(decodeURIComponent(id));
+  if (vue === "bibliotheque") return vueBibliotheque();
+  return vueAccueil();
+}
+window.addEventListener("hashchange", router);
+
+// ================================================================ accueil
+function vueAccueil() {
+  marquerMenu("accueil");
+  $page.innerHTML = `
+  <div class="contenu">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <h1 class="h1">Transformez un projet GitHub en application</h1>
+      <p class="sous-titre">Collez le lien d'un dépôt. Passerelle l'installe dans votre navigateur, crée une interface simple, et vous l'utilisez comme n'importe quel logiciel. Rien à installer.</p>
+    </div>
+    <form class="carte" id="form-lien" style="display:flex;flex-direction:column;gap:12px">
+      <label for="lien" class="titre-champ" style="margin:0">Lien du dépôt GitHub</label>
+      <div class="ligne">
+        <input id="lien" type="text" inputmode="url" autocomplete="off" required placeholder="https://github.com/nom/projet" style="flex:1 1 300px;min-width:0;min-height:52px;font-size:16px">
+        <button class="bouton" type="submit" style="min-height:52px">Créer l'application ${ICONES.fleche}</button>
+      </div>
+      <div id="msg-lien" class="erreur" role="alert" hidden></div>
+      <p class="aide" style="margin:0">Fonctionne avec les outils écrits en Python qui s'utilisent en ligne de commande et ne dépendent que de bibliothèques compatibles avec le navigateur.</p>
+    </form>
+    <section style="display:flex;flex-direction:column;gap:16px">
+      <h2 class="h2">Essayez avec un de ces outils</h2>
+      <div class="grille">
+        ${SUGGESTIONS.map((s, i) => `
+        <button class="tuile" type="button" data-i="${i}">
+          <span class="icone" style="background:${s.fond};color:${s.coul}">${ICONES[s.icone]}</span>
+          <strong style="font-size:17px">${s.titre}</strong>
+          <span style="font-size:14px;color:var(--doux)">${s.texte}</span>
+          <span class="mono">${s.lien.replace("https://github.com/", "")}</span>
+        </button>`).join("")}
+      </div>
+    </section>
+    <section class="carte" style="display:flex;flex-direction:column;gap:10px">
+      <h2 class="h2">Comment ça marche</h2>
+      <p style="margin:0;color:var(--doux)">Tout se passe sur votre appareil : Python est chargé dans la page (environ 10 Mo la première fois), le projet est récupéré sur GitHub, et l'outil tourne dans votre navigateur. Vos fichiers ne sont envoyés à aucun serveur.</p>
+    </section>
+  </div>`;
+  const msg = document.getElementById("msg-lien");
+  function lancer(lien) {
+    msg.hidden = true;
+    let depot;
+    try { depot = lireLien(lien); } catch (e) { msg.textContent = e.message; msg.hidden = false; return; }
+    const id = idDe(depot);
+    const a = APPS[id];
+    if (a && ["pret", "incomplet"].includes(a.statut)) { location.hash = `#/app/${id}`; return; }
+    if (a && a.statut === "installation" && installations.has(id)) { location.hash = `#/installation/${id}`; return; }
+    demarrerInstallation(id, depot);
+    location.hash = `#/installation/${id}`;
+  }
+  document.getElementById("form-lien").addEventListener("submit", (e) => { e.preventDefault(); lancer(document.getElementById("lien").value); });
+  document.querySelectorAll(".tuile[data-i]").forEach((b) => b.addEventListener("click", () => lancer(SUGGESTIONS[b.dataset.i].lien)));
+}
+
+// ================================================================ installation
+function demarrerInstallation(id, depot) {
+  APPS[id] = { id, depot, nom: depot.split("/")[1].replace(/[-_]/g, " "), statut: "installation", cree_le: Date.now() };
+  sauver();
+  const suivi = { etapes: ETAPES.map(([cle, titre]) => ({ cle, titre, etat: "attente" })), journal: [] };
+  installations.set(id, suivi);
+  const rafraichir = () => { if (location.hash === `#/installation/${id}`) dessinerInstallation(id); };
+  demander("installer", { id, depot }, (m) => {
+    if (m.type === "etape") { const e = suivi.etapes.find((x) => x.cle === m.cle); if (e) { e.etat = m.etat; if (m.detail) e.detail = m.detail; } }
+    if (m.type === "journal") { suivi.journal.push(m.ligne); if (suivi.journal.length > 400) suivi.journal.shift(); }
+    rafraichir();
+  }).then((r) => {
+    const app = APPS[id] || { id, depot };
+    if (r.ok) {
+      Object.assign(app, {
+        statut: r.problemes.length ? "incomplet" : "pret", analyse: r.analyse, description: r.description,
+        paquet_installe: r.paquet_installe, problemes: r.problemes, erreur: null,
+        meta: { depot: r.meta.depot, branche: r.meta.branche, fichiers: r.meta.fichiers, description: r.meta.description },
+      });
+      preparees.add(id);
+    } else {
+      Object.assign(app, { statut: "erreur", erreur: r.raison, description: r.description || app.description });
+    }
+    APPS[id] = app; sauver(); rafraichir();
+  }).catch((e) => {
+    const app = APPS[id];
+    if (app) { app.statut = "erreur"; app.erreur = e.message; sauver(); }
+    rafraichir();
+  });
+}
+
+function vueInstallation(id) {
+  marquerMenu("");
+  if (!APPS[id]) { location.hash = "#/"; return; }
+  $page.innerHTML = `<div class="contenu etroit" id="inst"></div>`;
+  dessinerInstallation(id);
+}
+
+function dessinerInstallation(id) {
+  const zone = document.getElementById("inst");
+  const d = APPS[id];
+  if (!zone || !d) return;
+  const suivi = installations.get(id) || { etapes: ETAPES.map(([cle, titre]) => ({ cle, titre, etat: d.statut === "erreur" ? "attente" : "fait" })), journal: [] };
+  const faits = suivi.etapes.filter((e) => e.etat === "fait").length;
+  const enCours = suivi.etapes.some((e) => e.etat === "en_cours");
+  const pct = Math.round(((faits + (enCours ? 0.5 : 0)) / suivi.etapes.length) * 100);
+  const ouvert = zone.querySelector("details")?.open;
+  const titre = d.statut === "installation" ? "On prépare votre application" : d.statut === "erreur" ? "L'installation n'a pas abouti" : "Votre application est prête";
+  const analyse = d.analyse;
+  zone.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <span class="mono" style="align-self:flex-start;padding:6px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--bord)">github.com/${echap(d.depot)}</span>
+      <h1 class="h1" style="font-size:40px">${titre}</h1>
+      ${d.statut === "installation" ? `<p class="sous-titre">Restez sur cette page. Selon le projet, cela prend de quelques secondes à quelques minutes.</p>` : ""}
+    </div>
+    ${d.statut === "installation" ? `<div class="barre" role="progressbar" aria-label="Progression" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>` : ""}
+    <ol class="etapes">
+      ${suivi.etapes.map((e) => `
+      <li>
+        <span class="puce ${e.etat}">${e.etat === "fait" ? ICONES.coche : e.etat === "erreur" ? ICONES.croix : ""}</span>
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+          <strong style="${e.etat === "attente" ? "color:var(--doux)" : ""}">${echap(e.titre)}${e.etat === "en_cours" ? "…" : ""}</strong>
+          ${e.detail ? `<span style="font-size:14px;color:${e.etat === "erreur" ? "var(--rouge)" : "var(--doux)"}">${echap(e.detail)}</span>` : ""}
+          ${e.cle === "analyse" && analyse ? `
+            <div style="padding:12px 14px;border-radius:12px;background:var(--fond);font-size:14px;display:flex;flex-direction:column;gap:6px">
+              ${d.description ? `<div><strong>Ce qu'il fait :</strong> ${echap(d.description)}</div>` : ""}
+              <div><strong>Ce qu'on peut faire avec :</strong> ${analyse.outils.length > 1 ? `${analyse.outils.length} actions (${analyse.outils.map((o) => echap(o.nom)).join(", ")})` : "1 action"}.</div>
+            </div>` : ""}
+        </div>
+      </li>`).join("")}
+    </ol>
+    ${d.statut === "erreur" ? `<div class="erreur" role="alert">${echap(d.erreur || "Une erreur s'est produite.")}</div>` : ""}
+    ${d.statut === "incomplet" ? `<div class="alerte">Certaines bibliothèques de ce projet ne fonctionnent pas dans un navigateur (${echap((d.problemes || []).join(", "))}). L'application peut quand même marcher en partie : essayez-la.</div>` : ""}
+    ${suivi.journal.length ? `<details class="technique" ${ouvert ? "open" : ""}><summary>Détails techniques</summary><pre class="journal" id="journal">${echap(suivi.journal.join("\n"))}</pre></details>` : ""}
+    <div class="ligne" style="justify-content:flex-end">
+      ${d.statut === "erreur" ? `<button class="bouton secondaire" id="reessayer" type="button">Réessayer</button>` : ""}
+      <a class="bouton secondaire" href="#/">Retour à l'accueil</a>
+      ${["pret", "incomplet"].includes(d.statut) ? `<a class="bouton" href="#/app/${encodeURIComponent(id)}">Ouvrir l'application ${ICONES.fleche}</a>` : ""}
+    </div>`;
+  const j = document.getElementById("journal"); if (j) j.scrollTop = j.scrollHeight;
+  document.getElementById("reessayer")?.addEventListener("click", () => { demarrerInstallation(id, d.depot); dessinerInstallation(id); });
+}
+
+// ================================================================ application générée
+function champHTML(p) {
+  const id = `champ-${p.nom}`;
+  const requis = p.requis ? ' <span style="color:var(--rouge)" aria-hidden="true">*</span>' : "";
+  const aide = p.aide ? `<div class="aide" id="${id}-aide">${echap(p.aide)}</div>` : "";
+  const decrit = p.aide ? ` aria-describedby="${id}-aide"` : "";
+  const req = p.requis ? " required" : "";
+  const def = p.defaut ?? "";
+  switch (p.genre) {
+    case "case": {
+      const coche = p.inverse || p.defaut === true ? " checked" : "";
+      return `<label class="case"><input type="checkbox" name="${p.nom}" id="${id}"${coche}${decrit}><span><strong style="font-weight:600">${echap(p.libelle)}</strong>${aide}</span></label>`;
+    }
+    case "fichier": case "dossier":
+      return `<div class="champ"><label class="titre-champ" for="${id}">${echap(p.libelle)}${requis}</label>
+        <input type="file" name="${p.nom}" id="${id}"${p.plusieurs || p.genre === "dossier" ? " multiple" : ""}${req}${decrit} data-entree="1">
+        ${p.genre === "dossier" ? `<div class="aide">Sélectionnez tous les fichiers à traiter : ils seront rangés dans un dossier pour l'outil.</div>` : ""}${aide}</div>`;
+    case "sortie": case "sortie_dossier": {
+      const suggestion = p.genre === "sortie_dossier" ? "resultats" : (typeof p.defaut === "string" && p.defaut.includes(".") ? p.defaut.split(/[\\/]/).pop() : "");
+      return `<div class="champ"><label class="titre-champ" for="${id}">${echap(p.libelle)} <span style="font-weight:400;color:var(--doux)">(nom du ${p.genre === "sortie_dossier" ? "dossier" : "fichier"} de résultat)</span></label>
+        <input type="text" name="${p.nom}" id="${id}" value="${echap(suggestion)}" placeholder="${p.requis ? "rempli automatiquement si vide" : "facultatif"}" data-sortie="${p.genre}"${decrit}>${aide}</div>`;
+    }
+    case "choix":
+      return `<div class="champ"><label class="titre-champ" for="${id}">${echap(p.libelle)}${requis}</label>
+        <select name="${p.nom}" id="${id}"${decrit}>${p.requis ? "" : `<option value="">(par défaut)</option>`}${p.choix.map((c) => `<option${String(c) === String(def) ? " selected" : ""}>${echap(c)}</option>`).join("")}</select>${aide}</div>`;
+    case "entier": case "nombre":
+      return `<div class="champ"><label class="titre-champ" for="${id}">${echap(p.libelle)}${requis}</label>
+        <input type="number" step="${p.genre === "entier" ? 1 : "any"}" name="${p.nom}" id="${id}" value="${echap(def)}"${req}${decrit}>${aide}</div>`;
+    default: {
+      const long = /^(text|texte|arguments|prompt|message|data|content|words?)$/i.test(p.nom);
+      return `<div class="champ"><label class="titre-champ" for="${id}">${echap(p.libelle)}${requis}</label>
+        ${long ? `<textarea name="${p.nom}" id="${id}"${req}${decrit}>${echap(def)}</textarea>` : `<input type="text" name="${p.nom}" id="${id}" value="${echap(def)}"${req}${decrit}>`}${aide}</div>`;
+    }
+  }
+}
+
+let urlsResultats = [];
+function libererResultats() { urlsResultats.forEach((u) => URL.revokeObjectURL(u)); urlsResultats = []; }
+const TYPES_MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", svg: "image/svg+xml", txt: "text/plain", html: "text/html", csv: "text/csv", json: "application/json", pdf: "application/pdf" };
+
+function vueApplication(id) {
+  marquerMenu("bibliotheque");
+  const d = APPS[id];
+  if (!d) { location.hash = "#/bibliotheque"; return; }
+  if (!d.analyse || !["pret", "incomplet"].includes(d.statut)) { location.hash = `#/installation/${id}`; return; }
+  const outils = d.analyse.outils;
+  let indexOutil = 0;
+
+  $page.innerHTML = `
+  <div class="contenu">
+    <a href="#/bibliotheque" style="align-self:flex-start;display:inline-flex;align-items:center;gap:8px;min-height:44px;text-decoration:none;font-weight:600">${ICONES.retour} Mes applications</a>
+    <div class="ligne" style="justify-content:space-between;gap:16px">
+      <div class="ligne" style="gap:16px;flex-wrap:nowrap;min-width:0">
+        <span class="icone" style="width:56px;height:56px;border-radius:14px;background:var(--vert-pale);color:var(--vert)">${ICONES.boite}</span>
+        <div style="min-width:0"><h1 style="font-size:32px;font-weight:700;text-transform:capitalize">${echap(d.nom)}</h1><div class="mono">github.com/${echap(d.depot)}</div></div>
+      </div>
+      <span class="badge ${d.statut}">${d.statut === "pret" ? "Interface créée automatiquement" : "Installée avec des soucis"}</span>
+    </div>
+    ${d.description ? `<p style="margin:0;color:var(--doux);max-width:760px">${echap(d.description)}</p>` : ""}
+    ${(d.analyse.avertissements || []).map((a) => `<div class="alerte">${echap(a)}</div>`).join("")}
+    <div id="preparation"></div>
+    ${outils.length > 1 ? `
+    <section class="carte" style="display:flex;flex-direction:column;gap:14px">
+      <h2 class="h2">Que voulez-vous faire ?</h2>
+      <div class="actions-choix" role="group" aria-label="Actions disponibles">
+        ${outils.map((o, i) => `<button type="button" class="choix-action" data-outil="${i}" aria-pressed="${i === 0}"><span style="display:block">${echap(o.libelle)}</span>${o.aide ? `<span style="display:block;font-weight:400;font-size:13px;color:var(--doux)">${echap(o.aide)}</span>` : ""}</button>`).join("")}
+      </div>
+    </section>` : ""}
+    <div class="deux-colonnes">
+      <form class="carte" id="formulaire" style="display:flex;flex-direction:column;gap:20px" novalidate></form>
+      <section class="carte" aria-labelledby="titre-resultat" style="display:flex;flex-direction:column;gap:16px">
+        <h2 class="h2" id="titre-resultat">Résultat</h2>
+        <div id="resultat" aria-live="polite"><div class="zone-resultat"><span style="padding:8px 14px;border-radius:10px;background:var(--surface);color:var(--doux)">Le résultat apparaîtra ici</span></div></div>
+      </section>
+    </div>
+  </div>`;
+
+  // ---- préparation (à chaque visite : Python ne garde rien d'une visite à l'autre)
+  let pret = preparees.has(id);
+  const zonePrep = document.getElementById("preparation");
+  function preparer() {
+    if (pret) { zonePrep.innerHTML = ""; majBouton(); return; }
+    const lignes = [];
+    const dessiner = (texte) => {
+      zonePrep.innerHTML = `<div class="info" role="status" style="display:flex;gap:12px;align-items:center"><span class="puce en_cours" aria-hidden="true"></span><span><strong>${texte}</strong><br><span style="font-size:13.5px">À chaque visite, l'outil est rechargé dans votre navigateur.</span></span></div>
+        ${lignes.length ? `<details class="technique" style="margin-top:8px"><summary>Détails techniques</summary><pre class="journal">${echap(lignes.slice(-60).join("\n"))}</pre></details>` : ""}`;
+    };
+    dessiner("Préparation de l'application…");
+    demander("preparer", { app: d }, (m) => { if (m.type === "journal") { lignes.push(m.ligne); } }).then((r) => {
+      if (!document.body.contains(zonePrep)) return;
+      if (r.ok) { pret = true; preparees.add(id); zonePrep.innerHTML = ""; }
+      else zonePrep.innerHTML = `<div class="erreur" role="alert">${echap(r.raison)} <button class="bouton secondaire" type="button" id="re-preparer" style="min-height:40px;margin-left:8px">Réessayer</button></div>`;
+      document.getElementById("re-preparer")?.addEventListener("click", preparer);
+      majBouton();
+    }).catch((e) => { if (document.body.contains(zonePrep)) zonePrep.innerHTML = `<div class="erreur">${echap(e.message)}</div>`; });
+  }
+  function majBouton() {
+    const b = document.getElementById("lancer");
+    if (!b || b.dataset.occupe) return;
+    b.disabled = !pret;
+    b.textContent = pret ? (b.dataset.deja ? "Lancer à nouveau" : "Lancer") : "Préparation…";
+  }
+
+  function dessinerFormulaire() {
+    const o = outils[indexOutil];
+    const essentiels = o.params.filter((p) => p.requis || ["fichier", "dossier", "sortie", "sortie_dossier"].includes(p.genre) || (p.positionnel && p.genre !== "case"));
+    const autres = o.params.filter((p) => !essentiels.includes(p));
+    const visibles = autres.slice(0, essentiels.length ? 3 : 5), caches = autres.slice(visibles.length);
+    const form = document.getElementById("formulaire");
+    form.innerHTML = `
+      ${essentiels.length ? `<h2 class="h2">1. Ce qu'il faut fournir</h2>${essentiels.map(champHTML).join("")}` : ""}
+      ${visibles.length ? `<h2 class="h2">${essentiels.length ? "2. " : ""}Réglages</h2>${visibles.map(champHTML).join("")}` : ""}
+      ${caches.length ? `<details><summary style="cursor:pointer;font-weight:600;min-height:32px">Plus de réglages (${caches.length})</summary><div style="display:flex;flex-direction:column;gap:18px;margin-top:14px">${caches.map(champHTML).join("")}</div></details>` : ""}
+      ${!o.params.length ? `<p class="info" style="margin:0">Cette action ne demande aucun réglage.</p>` : ""}
+      <div id="msg-form" class="erreur" role="alert" hidden></div>
+      <div class="ligne"><button class="bouton" type="submit" id="lancer" style="min-height:52px;flex:1 1 auto">Lancer</button>
+      <button class="bouton secondaire" type="button" id="arreter" hidden style="min-height:52px">Arrêter</button></div>`;
+    form.querySelectorAll("input[data-entree]").forEach((inp) => inp.addEventListener("change", () => {
+      const f = inp.files[0]; if (!f) return;
+      form.querySelectorAll('input[data-sortie="sortie"]').forEach((s) => {
+        if (s.dataset.touche) return;
+        const base = f.name.replace(/\.[^.]+$/, ""), ext = (f.name.match(/\.[^.]+$/) || [".txt"])[0].toLowerCase();
+        s.value = `${base}_resultat${/\.(jpe?g|webp|bmp|gif)$/.test(ext) ? ".png" : /\.md$/.test(ext) ? ".html" : ext}`;
+      });
+    }));
+    form.querySelectorAll("input[data-sortie]").forEach((s) => s.addEventListener("input", () => (s.dataset.touche = "1")));
+    form.onsubmit = envoyer;
+    document.getElementById("arreter").onclick = () => {
+      arreterTravailleur();
+      pret = false;
+      document.getElementById("resultat").innerHTML = `<div class="alerte">L'outil a été arrêté. L'application va être préparée à nouveau.</div>`;
+      finTache();
+      preparer();
+    };
+    majBouton();
+  }
+
+  document.querySelectorAll(".choix-action").forEach((b) => b.addEventListener("click", () => {
+    indexOutil = Number(b.dataset.outil);
+    document.querySelectorAll(".choix-action").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    dessinerFormulaire();
+  }));
+  dessinerFormulaire();
+  preparer();
+
+  function finTache() {
+    const b = document.getElementById("lancer"), s = document.getElementById("arreter");
+    if (!b) return;
+    delete b.dataset.occupe; b.dataset.deja = "1"; s.hidden = true; majBouton();
+  }
+
+  async function envoyer(e) {
+    e.preventDefault();
+    if (!pret) return;
+    const form = document.getElementById("formulaire"), msg = document.getElementById("msg-form"), bouton = document.getElementById("lancer");
+    msg.hidden = true;
+    const manquant = [...form.querySelectorAll("[required]")].find((c) => (c.type === "file" ? !c.files.length : !c.value.trim()));
+    if (manquant) {
+      msg.textContent = `Il manque : ${manquant.closest(".champ")?.querySelector("label")?.textContent.replace("*", "").trim() || "un champ obligatoire"}.`;
+      msg.hidden = false; manquant.focus(); return;
+    }
+    const valeurs = {}, fichiers = [], transfert = [];
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      if (el.type === "file") {
+        for (const f of el.files) { const octets = await f.arrayBuffer(); fichiers.push({ param: el.name, nom: f.name, octets }); transfert.push(octets); }
+      } else if (el.type === "checkbox") valeurs[el.name] = el.checked ? "on" : "";
+      else valeurs[el.name] = el.value;
+    }
+    bouton.dataset.occupe = "1"; bouton.disabled = true; bouton.textContent = "En cours…";
+    document.getElementById("arreter").hidden = false;
+    libererResultats();
+    const zone = document.getElementById("resultat");
+    zone.innerHTML = `<div class="zone-resultat"><span class="puce en_cours" aria-hidden="true"></span><strong>L'outil travaille…</strong></div><details class="technique" style="margin-top:12px"><summary>Ce que l'outil affiche</summary><pre class="journal" id="journal-vivant"></pre></details>`;
+    const lignes = [];
+    try {
+      const r = await demander("lancer", { app: d, indexOutil, valeurs, fichiers }, (m) => {
+        if (m.type !== "sortie") return;
+        lignes.push(m.ligne);
+        const j = document.getElementById("journal-vivant");
+        if (j) { j.textContent = lignes.filter((l) => !l.startsWith("[passerelle]")).slice(-300).join("\n"); j.scrollTop = j.scrollHeight; }
+      }, transfert);
+      afficherResultat(r, lignes);
+    } catch (err) {
+      if (document.getElementById("resultat") && !err.message.startsWith("Arrêté")) zone.innerHTML = `<div class="erreur">${echap(err.message)}</div>`;
+    }
+    finTache();
+  }
+
+  function afficherResultat(r, lignes) {
+    const zone = document.getElementById("resultat");
+    if (!zone) return;
+    const ok = r.code === 0;
+    const affiche = lignes.filter((l) => !l.startsWith("[passerelle]")).join("\n").replace(/\s+$/, "");
+    const fichiers = r.resultats.map((f) => {
+      const ext = (f.nom.split(".").pop() || "").toLowerCase();
+      const blob = new Blob([f.octets], { type: TYPES_MIME[ext] || "application/octet-stream" });
+      const url = URL.createObjectURL(blob); urlsResultats.push(url);
+      return { ...f, url, blob };
+    });
+    const images = fichiers.filter((f) => f.type === "image");
+    const textes = fichiers.filter((f) => f.type !== "image" && f.taille < 200000 && /\.(txt|md|csv|json|html|srt|vtt|log|xml)$/i.test(f.nom));
+    zone.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="${ok ? "info" : "erreur"}" role="status"><strong>${ok ? "Terminé !" : "L'outil a rencontré un problème."}</strong> ${ok ? (fichiers.length ? "Voici le résultat." : "") : "Regardez ce qu'il a affiché ci-dessous pour comprendre."}</div>
+        ${images.length ? `<div class="zone-resultat">${images.slice(0, 3).map((f) => `<img src="${f.url}" alt="Résultat : ${echap(f.nom)}">`).join("")}</div>` : ""}
+        ${textes.slice(0, 2).map((f) => `<pre class="sortie-texte" data-texte="${echap(f.url)}">Chargement…</pre>`).join("")}
+        ${fichiers.map((f) => `<div class="fichier-resultat"><span style="min-width:0;word-break:break-all"><strong style="font-weight:600">${echap(f.nom)}</strong> <span style="color:var(--doux);font-size:13px">${(f.taille / 1024).toFixed(f.taille < 10240 ? 1 : 0)} Ko</span></span><a class="bouton secondaire" style="min-height:40px;padding:0 14px;font-size:14px" href="${f.url}" download="${echap(f.nom.split("/").pop())}">${ICONES.telecharger} Télécharger</a></div>`).join("")}
+        ${affiche && !fichiers.length ? `<div class="ligne" style="justify-content:flex-end"><button class="bouton secondaire" type="button" id="copier" style="min-height:40px;font-size:14px">Copier le texte</button></div><pre class="sortie-texte" id="texte-sortie">${echap(affiche)}</pre>` : ""}
+        ${affiche && fichiers.length ? `<details class="technique"><summary>Ce que l'outil a affiché</summary><pre class="journal">${echap(affiche)}</pre></details>` : ""}
+        ${!affiche && !fichiers.length ? `<p style="color:var(--doux);margin:0">L'outil n'a rien affiché et n'a créé aucun fichier.</p>` : ""}
+      </div>`;
+    zone.querySelectorAll("pre[data-texte]").forEach(async (pre, i) => { pre.textContent = await textes[i].blob.text(); });
+    document.getElementById("copier")?.addEventListener("click", async (ev) => {
+      try { await navigator.clipboard.writeText(affiche); ev.target.textContent = "Copié"; }
+      catch (e) { const s = getSelection(); s.selectAllChildren(document.getElementById("texte-sortie")); ev.target.textContent = "Texte sélectionné"; }
+    });
+  }
+}
+
+// ================================================================ bibliothèque
+function vueBibliotheque() {
+  marquerMenu("bibliotheque");
+  const apps = Object.values(APPS).sort((a, b) => (b.cree_le || 0) - (a.cree_le || 0));
+  $page.innerHTML = `
+  <div class="contenu">
+    <div style="display:flex;flex-direction:column;gap:8px"><h1 class="h1" style="font-size:40px">Mes applications</h1><p class="sous-titre" style="font-size:16px">Les outils que vous avez transformés, gardés dans ce navigateur.</p></div>
+    <div class="grille">
+      ${apps.map((a) => `
+      <article class="tuile" style="cursor:default">
+        <div class="ligne" style="justify-content:space-between;align-items:flex-start">
+          <span class="icone" style="background:var(--vert-pale);color:var(--vert)">${ICONES.boite}</span>
+          <span class="badge ${a.statut}">${STATUTS[a.statut] || a.statut}</span>
+        </div>
+        <div><h2 style="font-size:18px;font-weight:600;font-family:var(--texte);text-transform:capitalize">${echap(a.nom)}</h2><div class="mono">${echap(a.depot)}</div></div>
+        ${a.description ? `<p style="margin:0;font-size:14px;color:var(--doux);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${echap(a.description)}</p>` : ""}
+        <div class="ligne" style="margin-top:auto" data-zone="${echap(a.id)}">
+          <a class="bouton" style="flex:1 1 0;min-height:44px" href="${["pret", "incomplet"].includes(a.statut) ? "#/app/" : "#/installation/"}${encodeURIComponent(a.id)}">${["pret", "incomplet"].includes(a.statut) ? "Ouvrir" : "Voir"}</a>
+          <button class="bouton danger" style="min-height:44px;padding:0 14px" type="button" data-supprimer="${echap(a.id)}" aria-label="Retirer ${echap(a.nom)}">Retirer</button>
+        </div>
+      </article>`).join("")}
+      <a class="tuile" href="#/" style="align-items:center;justify-content:center;min-height:200px;border:2px dashed var(--bord-fort);background:transparent;color:var(--vert);font-weight:600">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Ajouter un projet GitHub</a>
+    </div>
+  </div>`;
+  document.querySelectorAll("[data-supprimer]").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.supprimer, zone = b.parentElement, avant = zone.innerHTML;
+    zone.innerHTML = `<div class="confirmer"><span style="font-size:14px">Retirer cette application ?</span><button class="bouton danger" type="button" style="min-height:40px;padding:0 12px">Oui, retirer</button><button class="bouton secondaire" type="button" style="min-height:40px;padding:0 12px">Annuler</button></div>`;
+    const [oui, non] = zone.querySelectorAll("button");
+    oui.onclick = () => { delete APPS[id]; installations.delete(id); preparees.delete(id); sauver(); vueBibliotheque(); };
+    non.onclick = () => vueBibliotheque();
+  }));
+}
+
+// ================================================================ démarrage
+router();
+// Python se charge en arrière-plan dès l'arrivée sur la page, pour gagner du temps
+setTimeout(() => demander("init").catch(() => {}), 300);
+</script>
+</body>
+</html>
