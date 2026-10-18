@@ -220,6 +220,51 @@ def _param(p):
     }
 
 
+def _fusionner(outils_regles, outils_ia):
+    """
+    Les règles lisent le code avec exactitude (noms des options, types, valeurs possibles) ;
+    l'IA apporte des libellés et des explications en français, et peut repérer un fichier là où les règles
+    voient du texte. On part donc des règles et on y ajoute ce que l'IA sait de plus : l'IA ne peut rien retirer.
+    """
+    par_drapeau, positionnels = {}, []
+    for o in outils_ia:
+        for p in o["params"]:
+            if p["positionnel"]:
+                positionnels.append(p)
+            elif p["drapeau"]:
+                par_drapeau.setdefault(p["drapeau"], p)
+    textes_ia = {tuple(o["prefixe"]): o for o in outils_ia}
+    resultat = []
+    for o in outils_regles:
+        o = dict(o, params=[dict(p) for p in o["params"]])
+        rang = 0
+        for p in o["params"]:
+            q = None
+            if p["positionnel"]:
+                q = next((x for x in positionnels if x["nom"] == p["nom"]), None)
+                if q is None and rang < len(positionnels):
+                    q = positionnels[rang]
+                rang += 1
+            else:
+                q = par_drapeau.get(p["drapeau"])
+            if not q:
+                continue
+            p["libelle"] = q["libelle"] or p["libelle"]
+            p["aide"] = q["aide"] or p["aide"]
+            # Seuls les champs « texte » peuvent devenir plus précis : un type lu dans le code reste prioritaire
+            if p["genre"] == "texte" and q["genre"] in ("fichier", "dossier", "sortie", "sortie_dossier"):
+                p["genre"] = q["genre"]
+            if p["genre"] == "texte" and q["genre"] == "choix" and q["choix"]:
+                p["genre"], p["choix"] = "choix", q["choix"]
+        texte_ia = textes_ia.get(tuple(o.get("prefixe") or [])) or (outils_ia[0] if len(outils_regles) == 1 else None)
+        if texte_ia:
+            if texte_ia["libelle"] and texte_ia["libelle"] != "Utiliser l'outil":
+                o["libelle"] = texte_ia["libelle"]
+            o["aide"] = texte_ia["aide"] or o.get("aide", "")
+        resultat.append(o)
+    return resultat
+
+
 def valider(racine, reponse_json, regles_json):
     """Retourne {"ok": True, "analyse": …} prêt à l'emploi, ou {"ok": False, "raison": …}."""
     try:
@@ -269,6 +314,10 @@ def valider(racine, reponse_json, regles_json):
                     params.append(p)
         params.sort(key=lambda p: (not p["avant"], not p["positionnel"]))
         outils = [{"nom": "", "prefixe": [], "params": params, "libelle": "Utiliser l'outil", "aide": ""}]
+
+    if regles.get("ok"):
+        outils = _fusionner(regles["outils"], outils)
+        lancement = regles["lancement"] if not _lancement(racine, r.get("lancement")) else lancement
 
     analyse = {
         "ok": True, "source": "ia",
