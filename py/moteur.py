@@ -105,6 +105,12 @@ async def installer(id_app, pypi_ok, journal):
             journal(f"Installation des dépendances une par une ({len(deps)})…")
         for d in deps:
             ok, err = await essayer(d)
+            nom_seul = re.match(r"^\s*([A-Za-z0-9_.\-]+)", d)
+            if not ok and nom_seul and nom_seul.group(1) != d.strip():
+                # La version exacte demandée n'existe pas pour le navigateur : on essaie la version disponible
+                ok, err2 = await essayer(nom_seul.group(1))
+                if ok:
+                    d = f"{nom_seul.group(1)} (version disponible)"
             journal(("  ✓ " if ok else "  ✗ ") + d + ("" if ok else f" ({err})"))
             if not ok:
                 problemes.append(d)

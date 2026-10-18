@@ -8,11 +8,14 @@
 const VERSION_PYODIDE = "0.28.3";
 importScripts(`https://cdn.jsdelivr.net/pyodide/v${VERSION_PYODIDE}/full/pyodide.js`);
 
-const VERSION_MOTEUR = "1";
+const VERSION_MOTEUR = "2";
 const FICHIERS_MOTEUR = ["analyseur.py", "installeur.py", "executeur.py", "moteur.py"];
 const DOSSIERS_IGNORES = new Set([".git", "venv", ".venv", "env", "node_modules", "__pycache__", "build", "dist",
   "site-packages", ".tox", "docs", "doc", "examples", "example", "tests", "test", "benchmarks", ".github"]);
 const LIMITES = { fichiersLegers: 800, fichiersTotal: 2500, octetsTotal: 80 * 1024 * 1024, octetsFichier: 5 * 1024 * 1024 };
+
+// Bibliothèques qui ne peuvent pas tourner dans un navigateur : si un projet en dépend, inutile de proposer l'outil
+const LOURDS = /^(onnxruntime|torch|torchvision|torchaudio|tensorflow|jax|jaxlib|pyqt|pyside|playwright|selenium|psycopg|mysqlclient|pyaudio|sounddevice|pygame|keras|transformers|llama|ultralytics|gradio)/i;
 
 let pyodide = null;
 let moteur = null;
@@ -186,11 +189,18 @@ async function installer(msg) {
 
     cle = "installation";
     const res = await etapeInstallation();
+    const bloquants = res.problemes.filter((p) => LOURDS.test(p));
+    if (bloquants.length) {
+      const noms = bloquants.map((p) => p.split(/[<>=!~ ;\[]/)[0]).join(", ");
+      const raison = `Cet outil a besoin de ${noms}, qui ne peut pas fonctionner dans un navigateur (bibliothèque trop lourde ou liée au système). Utilisez la version Windows de Passerelle pour ce projet.`;
+      etape("installation", "erreur", raison);
+      return { ok: false, raison, description: meta.description || analyse.description };
+    }
     etape("installation", res.problemes.length ? "erreur" : "fait",
       res.problemes.length ? `Non installé dans le navigateur : ${res.problemes.join(", ")}` : (res.paquet_installe ? "Version officielle installée." : "Lancé depuis le code du dépôt."));
     etape("interface", "fait");
     prets.add(id);
-    return { ok: true, analyse, meta, description: analyse.description || meta.description, ...res };
+    return { ok: true, analyse, meta, description: meta.description || analyse.description, ...res };
   } catch (e) {
     const message = e instanceof ErreurClaire ? e.message : `Erreur inattendue : ${e && e.message || e}`;
     journal(`ERREUR : ${e && e.message || e}`);
