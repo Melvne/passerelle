@@ -266,7 +266,7 @@ async function installer(msg) {
         return { ok: false, application: true, version, langage: meta.langage, description: meta.description || analyse.description };
       }
       let raison = analyse.raison;
-      if (meta.langage && meta.langage !== "Python" && !raison.includes(meta.langage)) raison += ` (langage principal de ce projet : ${meta.langage}).`;
+      if (!analyse.definitif && meta.langage && meta.langage !== "Python" && !raison.includes(meta.langage)) raison += ` (langage principal de ce projet : ${meta.langage}).`;
       etape("analyse", "erreur", raison);
       return { ok: false, raison, description: meta.description || analyse.description };
     }
