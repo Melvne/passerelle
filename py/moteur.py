@@ -42,7 +42,9 @@ def analyser(id_app, depot, langage=""):
             continue
         r = module.analyser_depot(racine, depot)
         r.setdefault("langage", "javascript" if module is analyseur_js else "python")
-        if r["ok"]:
+        if r["ok"] or r.get("definitif"):
+            # Un verdict certain (ex. outil pour assistants IA) l'emporte : on ne cherche pas un autre programme
+            # secondaire du dépôt (petits scripts Python d'aide, par exemple)
             return json.dumps(r, ensure_ascii=False)
         premier = premier or r
     return json.dumps(premier, ensure_ascii=False)
