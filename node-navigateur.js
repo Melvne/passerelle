@@ -6,7 +6,8 @@
 "use strict";
 
 const NODE_API = "https://cdn.jsdelivr.net/npm/@webcontainer/api@1.6.4/+esm";
-const NODE_RACINE = "/home/passerelle";
+// Les chemins de vm.fs et de « cwd » sont relatifs au dossier de travail ; Node, lui, a besoin des chemins complets
+const absolu = (rel) => `${nodeVM.workdir}/${rel}`;
 let nodeVM = null, demarrageNode = null;
 const appsNodePretes = new Map();   // id → chemin absolu du programme à lancer
 let processusNode = null;
@@ -65,7 +66,7 @@ async function ecrireFichiersNode(dossier, fichiers) {
 async function installerNode(app, fichiers, journal) {
   const vm = await demarrerNode();
   const L = app.analyse.lancement;
-  const dossier = `${NODE_RACINE}/apps/${app.id}`;
+  const dossier = `apps/${app.id}`;
   try { await vm.fs.rm(dossier, { recursive: true, force: true }); } catch (e) {}
   await vm.fs.mkdir(dossier, { recursive: true });
   const npmOptions = ["--no-audit", "--no-fund", "--omit=dev", "--loglevel=error"];
@@ -79,14 +80,14 @@ async function installerNode(app, fichiers, journal) {
     const pkg = JSON.parse(await vm.fs.readFile(`${dossier}/node_modules/${L.paquet}/package.json`, "utf-8"));
     const bin = typeof pkg.bin === "string" ? pkg.bin : (pkg.bin || {})[L.bin] || Object.values(pkg.bin || {})[0];
     if (!bin) throw new Error("la version publiée ne déclare pas de commande");
-    programme = `${dossier}/node_modules/${L.paquet}/${bin.replace(/^\.\//, "")}`;
+    programme = absolu(`${dossier}/node_modules/${L.paquet}/${bin.replace(/^\.\//, "")}`);
   } else {
     journal(`Copie des ${fichiers.length} fichiers du projet…`);
     await ecrireFichiersNode(`${dossier}/code`, fichiers);
     journal("Installation des dépendances avec npm…");
     const code = await executerNode("npm", ["install", ...npmOptions], { cwd: `${dossier}/code` }, journal);
     if (code !== 0) throw new Error(`l'installation des dépendances a échoué (code ${code})`);
-    programme = `${dossier}/code/${L.fichier}`;
+    programme = absolu(`${dossier}/code/${L.fichier}`);
   }
   appsNodePretes.set(app.id, programme);
   journal("Installé.");
@@ -119,7 +120,7 @@ async function lancerNode(app, fichiersEntree, construireArgs, surLigne) {
   const vm = await demarrerNode();
   const programme = appsNodePretes.get(app.id);
   if (!programme) throw new Error("l'outil n'est pas encore prêt");
-  const job = `${NODE_RACINE}/jobs/t${Date.now()}`;
+  const job = `jobs/t${Date.now()}`, jobAbsolu = absolu(job);
   await vm.fs.mkdir(`${job}/sorties`, { recursive: true });
   const entrees = {};
   for (const f of fichiersEntree) {
@@ -127,11 +128,11 @@ async function lancerNode(app, fichiersEntree, construireArgs, surLigne) {
     const dossier = `${job}/entrees/${f.param}`;
     await vm.fs.mkdir(dossier, { recursive: true });
     await vm.fs.writeFile(`${dossier}/${nom}`, new Uint8Array(f.octets));
-    (entrees[f.param] = entrees[f.param] || []).push(`${dossier}/${nom}`);
+    (entrees[f.param] = entrees[f.param] || []).push(absolu(`${dossier}/${nom}`));
   }
-  const args = await construireArgs(entrees, job);
+  const args = await construireArgs(entrees, jobAbsolu);
   // Les dossiers de sortie demandés par le formulaire doivent exister avant le lancement
-  for (const a of args) if (typeof a === "string" && a.startsWith(`${job}/sorties/`) && !/\.\w{1,5}$/.test(a)) await vm.fs.mkdir(a, { recursive: true });
+  for (const a of args) if (typeof a === "string" && a.startsWith(`${jobAbsolu}/sorties/`) && !/\.\w{1,5}$/.test(a)) await vm.fs.mkdir(a.slice(nodeVM.workdir.length + 1), { recursive: true });
   surLigne(`[passerelle] arguments : ${JSON.stringify(args)}`);
   const code = await executerNode("node", [programme, ...args], { cwd: `${job}/sorties` }, surLigne);
   return { code, resultats: await listerResultatsNode(`${job}/sorties`) };
