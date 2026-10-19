@@ -30,8 +30,28 @@ def dossier_code(id_app):
 
 # ------------------------------------------------------------------ analyse
 
-def analyser(id_app, depot):
-    return json.dumps(analyseur.analyser_depot(dossier_code(id_app), depot), ensure_ascii=False)
+def analyser(id_app, depot, langage=""):
+    """Choisit le bon analyseur : Python ou JavaScript (d'après le langage principal du dépôt sur GitHub)."""
+    import analyseur_js
+    racine = dossier_code(id_app)
+    a_package = os.path.exists(os.path.join(racine, "package.json"))
+    ordre = [analyseur_js, analyseur] if (langage in ("JavaScript", "TypeScript") and a_package) else [analyseur, analyseur_js]
+    premier = None
+    for module in ordre:
+        if module is analyseur_js and not a_package:
+            continue
+        r = module.analyser_depot(racine, depot)
+        r.setdefault("langage", "javascript" if module is analyseur_js else "python")
+        if r["ok"]:
+            return json.dumps(r, ensure_ascii=False)
+        premier = premier or r
+    return json.dumps(premier, ensure_ascii=False)
+
+
+def construire_args(outil_json, valeurs_json, entrees_json, dossier_job):
+    """Arguments de la ligne de commande à partir du formulaire (servent aussi aux outils JavaScript)."""
+    return json.dumps(executeur.construire_arguments(json.loads(outil_json), json.loads(valeurs_json),
+                                                     json.loads(entrees_json), dossier_job), ensure_ascii=False)
 
 
 def nom_paquet(racine):
@@ -303,7 +323,8 @@ def resultats(dossier_job):
 
 def contexte_ia(id_app, depot, description_github, regles_json):
     import ia
-    return ia.contexte(dossier_code(id_app), depot, description_github, regles_json, "local")
+    langage = (json.loads(regles_json) or {}).get("langage", "python")
+    return ia.contexte(dossier_code(id_app), depot, description_github, regles_json, "local", langage)
 
 
 def valider_ia(id_app, reponse_json, regles_json):

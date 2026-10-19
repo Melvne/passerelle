@@ -20,7 +20,9 @@ TAILLES = {
     "local": {"readme": 2500, "extrait": 4500, "total": 9000, "fichiers": 80, "config": 1200, "nb": 4},
     "complet": {"readme": 8000, "extrait": 7000, "total": 36000, "fichiers": 300, "config": 3000, "nb": 8},
 }
-INDICES_CODE = re.compile(r"argparse|optparse|click|typer|fire\.Fire|sys\.argv|__main__|def main\b|input\(")
+INDICES_CODE = re.compile(r"argparse|optparse|click|typer|fire\.Fire|sys\.argv|__main__|def main\b|input\(|"
+                          r"commander|yargs|meow|process\.argv|\.option\(|\.command\(|#!/usr/bin/env node")
+EXT_CODE = {"python": (".py",), "javascript": (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")}
 
 
 def _lire(chemin, limite):
@@ -33,7 +35,8 @@ def _lire(chemin, limite):
 
 
 LIGNES_UTILES = re.compile(r"add_argument|add_option|add_parser|click\.(option|argument|command|group)|@\w+\.(command|option|argument)|"
-                           r"ArgumentParser|OptionParser|typer|fire\.Fire|def main\b|sys\.argv|__name__\s*==|usage\s*=")
+                           r"ArgumentParser|OptionParser|typer|fire\.Fire|def main\b|sys\.argv|__name__\s*==|usage\s*=|"
+                           r"\.(option|requiredOption|argument|command|options|positional|describe)\s*\(|flags\s*:|case\s+['\"]-|process\.argv")
 
 
 def _extrait_code(chemin, limite):
@@ -60,16 +63,17 @@ def _extrait_code(chemin, limite):
     return "\n".join(morceaux)
 
 
-def contexte(racine, depot, description_github, regles_json, taille="local"):
+def contexte(racine, depot, description_github, regles_json, taille="local", langage="python"):
     """Texte envoyé à l'IA pour qu'elle comprenne le projet."""
     T = TAILLES.get(taille, TAILLES["local"])
+    extensions = EXT_CODE.get(langage, EXT_CODE["python"])
     fichiers, py = [], []
     for dossier, sous, noms in os.walk(racine):
         sous[:] = sorted(s for s in sous if not s.startswith("."))
         for n in sorted(noms):
             rel = os.path.relpath(os.path.join(dossier, n), racine).replace(os.sep, "/")
             fichiers.append(rel)
-            if n.endswith(".py"):
+            if n.endswith(extensions) and not n.endswith((".d.ts", ".min.js")):
                 py.append(rel)
 
     # Les fichiers de code les plus parlants d'abord : points d'entrée déclarés, puis ceux qui lisent des arguments
@@ -78,6 +82,12 @@ def contexte(racine, depot, description_github, regles_json, taille="local"):
         f, _ = analyseur._module_vers_fichier(racine, cible.split(":")[0])
         if f:
             entrees.add(os.path.relpath(f, racine).replace(os.sep, "/"))
+    try:
+        fichier_bin = (json.loads(regles_json) or {}).get("lancement", {}).get("fichier")
+        if fichier_bin:
+            entrees.add(fichier_bin)
+    except (ValueError, AttributeError):
+        pass
 
     def score(rel):
         texte = _lire(os.path.join(racine, rel), 60000)
@@ -88,7 +98,7 @@ def contexte(racine, depot, description_github, regles_json, taille="local"):
         return s
 
     choisis, total = [], 0
-    utiles = [r for r in py if os.path.basename(r) not in ("setup.py", "conftest.py")
+    utiles = [r for r in py if os.path.basename(r) not in ("setup.py", "conftest.py") and not re.search(r"\.(test|spec)\.", r)
               and not re.match(r"test_|.*_test\.py$|test\.py$", os.path.basename(r))
               and not re.search(r"(^|/)(tests?|docs?|examples?)/", r)]
     notes = {r: score(r) for r in utiles}
@@ -108,13 +118,13 @@ def contexte(racine, depot, description_github, regles_json, taille="local"):
             break
 
     config = []
-    for n in ("pyproject.toml", "setup.cfg", "setup.py", "requirements.txt"):
+    for n in (("package.json",) if langage == "javascript" else ("pyproject.toml", "setup.cfg", "setup.py", "requirements.txt")):
         p = os.path.join(racine, n)
         if os.path.exists(p):
             config.append((n, _lire(p, T["config"])))
 
     parties = [
-        f"# Dépôt GitHub : {depot}",
+        f"# Dépôt GitHub : {depot} (langage : {'JavaScript / Node.js' if langage == 'javascript' else 'Python'})",
         f"Description GitHub : {description_github or '(aucune)'}",
         "## Liste des fichiers récupérés (code et configuration uniquement)",
         "\n".join(fichiers[:T["fichiers"]]) + ("\n[…]" if len(fichiers) > T["fichiers"] else ""),

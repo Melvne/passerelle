@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Passerelle</title>
+<script src="coi-serviceworker.js"></script>
 <meta name="description" content="Transformez un projet GitHub en application, directement dans votre navigateur, sans rien installer.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
@@ -123,7 +124,8 @@ pre.sortie-texte{background:var(--surface);color:var(--encre);border:1px solid v
   <main id="page" tabindex="-1"></main>
 </div>
 
-<script src="ia-consignes.js?v=7"></script>
+<script src="ia-consignes.js?v=9"></script>
+<script src="node-navigateur.js?v=9"></script>
 <script>
 "use strict";
 const $page = document.getElementById("page");
@@ -145,6 +147,7 @@ const ICONES = {
 const SUGGESTIONS = [
   { lien: "https://github.com/lincolnloop/python-qrcode", titre: "Créer un QR code", texte: "Transforme un lien ou un texte en QR code à imprimer ou partager.", icone: "qr", fond: "var(--vert-pale)", coul: "var(--vert)" },
   { lien: "https://github.com/pwaller/pyfiglet", titre: "Écrire en grandes lettres", texte: "Transforme un mot en grand texte décoratif fait de caractères.", icone: "texte", fond: "var(--bleu-pale)", coul: "var(--bleu)" },
+  { lien: "https://github.com/svg/svgo", titre: "Alléger une image SVG", texte: "Réduit le poids d'un fichier SVG (logos, icônes) sans changer son apparence. Outil JavaScript.", icone: "page", fond: "var(--vert-pale)", coul: "var(--vert)" },
   { lien: "https://github.com/Python-Markdown/markdown", titre: "Convertir un texte Markdown en page web", texte: "Transforme un fichier .md (texte mis en forme) en page HTML.", icone: "page", fond: "var(--orange-pale)", coul: "var(--orange)" },
 ];
 const STATUTS = { pret: "Prête", incomplet: "Installée avec des soucis", erreur: "Problème", installation: "En cours d'installation" };
@@ -235,7 +238,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=8");
+  travailleur = new Worker("travailleur.js?v=9");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);
@@ -300,7 +303,7 @@ function vueAccueil() {
         <button class="bouton" type="submit" style="min-height:52px">Créer l'application ${ICONES.fleche}</button>
       </div>
       <div id="msg-lien" class="erreur" role="alert" hidden></div>
-      <p class="aide" style="margin:0">Fonctionne avec les outils écrits en Python et compatibles avec le navigateur.
+      <p class="aide" style="margin:0">Fonctionne avec les outils en ligne de commande écrits en Python ou en JavaScript.
         ${iaActive() ? `<strong style="color:var(--vert)">L'IA gratuite est activée</strong> : elle lit chaque projet pour créer une interface en français.` : `<a href="#/reglages">Activez l'IA gratuite</a> pour comprendre plus de projets et obtenir une interface en français.`}</p>
     </form>
     <section style="display:flex;flex-direction:column;gap:16px">
@@ -357,15 +360,28 @@ function demarrerInstallation(id, depot) {
     if (m.type === "etape") { const e = suivi.etapes.find((x) => x.cle === m.cle); if (e) { e.etat = m.etat; if (m.detail) e.detail = m.detail; } }
     if (m.type === "journal") { suivi.journal.push(m.ligne); if (suivi.journal.length > 400) suivi.journal.shift(); }
     rafraichir();
-  }).then((r) => {
+  }).then(async (r) => {
     const app = APPS[id] || { id, depot };
+    if (r.ok && r.javascript) {
+      const etape = (cle, etat, detail) => { const e = suivi.etapes.find((x) => x.cle === cle); if (e) { e.etat = etat; if (detail) e.detail = detail; } rafraichir(); };
+      const journal = (l) => { if (l && l.trim()) { suivi.journal.push(l); if (suivi.journal.length > 400) suivi.journal.shift(); rafraichir(); } };
+      try {
+        journal("Démarrage de Node.js dans le navigateur…");
+        await installerNode({ id, analyse: r.analyse, npm: r.npm }, r.fichiers || [], journal);
+        etape("installation", "fait", r.npm ? "Version officielle installée avec Node.js." : "Installé depuis le code du dépôt avec Node.js.");
+        etape("interface", "fait");
+      } catch (e) {
+        etape("installation", "erreur", `Installation impossible : ${e.message}`);
+        r = { ok: false, raison: `L'installation de cet outil JavaScript a échoué : ${e.message}`, description: r.description };
+      }
+    }
     if (r.ok) {
       Object.assign(app, {
         statut: r.problemes.length ? "incomplet" : "pret", analyse: r.analyse, description: r.description,
-        paquet_installe: r.paquet_installe, problemes: r.problemes, erreur: null,
+        paquet_installe: r.paquet_installe, problemes: r.problemes, erreur: null, npm: !!r.npm,
         meta: { depot: r.meta.depot, branche: r.meta.branche, fichiers: r.meta.fichiers, description: r.meta.description },
       });
-      preparees.add(id);
+      if (!r.javascript) preparees.add(id);
     } else {
       Object.assign(app, { statut: "erreur", erreur: r.raison, description: r.description || app.description });
     }
@@ -484,7 +500,7 @@ function vueApplication(id) {
     <div class="ligne" style="justify-content:space-between;gap:16px">
       <div class="ligne" style="gap:16px;flex-wrap:nowrap;min-width:0">
         <span class="icone" style="width:56px;height:56px;border-radius:14px;background:var(--vert-pale);color:var(--vert)">${ICONES.boite}</span>
-        <div style="min-width:0"><h1 style="font-size:32px;font-weight:700;text-transform:capitalize">${echap(d.nom)}</h1><div class="mono">github.com/${echap(d.depot)}</div></div>
+        <div style="min-width:0"><h1 style="font-size:32px;font-weight:700;text-transform:capitalize">${echap(d.nom)}</h1><div class="mono">github.com/${echap(d.depot)} · ${d.analyse.langage === "javascript" ? "JavaScript" : "Python"}</div></div>
       </div>
       <span class="badge ${d.statut}">${d.statut !== "pret" ? "Installée avec des soucis" : d.analyse.source === "ia" ? "Interface créée par l'IA" : "Interface créée automatiquement"}</span>
     </div>
@@ -508,7 +524,8 @@ function vueApplication(id) {
   </div>`;
 
   // ---- préparation (à chaque visite : Python ne garde rien d'une visite à l'autre)
-  let pret = preparees.has(id);
+  const estJS = d.analyse.langage === "javascript";
+  let pret = estJS ? appsNodePretes.has(id) : preparees.has(id);
   const zonePrep = document.getElementById("preparation");
   function preparer() {
     if (pret) { zonePrep.innerHTML = ""; majBouton(); return; }
@@ -518,9 +535,17 @@ function vueApplication(id) {
         ${lignes.length ? `<details class="technique" style="margin-top:8px"><summary>Détails techniques</summary><pre class="journal">${echap(lignes.slice(-60).join("\n"))}</pre></details>` : ""}`;
     };
     dessiner("Préparation de l'application…");
-    demander("preparer", { app: d }, (m) => { if (m.type === "journal") { lignes.push(m.ligne); } }).then((r) => {
+    const preparation = estJS
+      ? (async () => {
+          const journal = (l) => lignes.push(l);
+          const fichiers = d.npm ? [] : await demander("fichiers_js", { id, meta: d.meta }, (m) => { if (m.type === "journal") lignes.push(m.ligne); });
+          await installerNode(d, fichiers, journal);
+          return { ok: true };
+        })().catch((e) => ({ ok: false, raison: `Préparation impossible : ${e.message}` }))
+      : demander("preparer", { app: d }, (m) => { if (m.type === "journal") { lignes.push(m.ligne); } });
+    preparation.then((r) => {
       if (!document.body.contains(zonePrep)) return;
-      if (r.ok) { pret = true; preparees.add(id); zonePrep.innerHTML = ""; }
+      if (r.ok) { pret = true; if (!estJS) preparees.add(id); zonePrep.innerHTML = ""; }
       else zonePrep.innerHTML = `<div class="erreur" role="alert">${echap(r.raison)} <button class="bouton secondaire" type="button" id="re-preparer" style="min-height:40px;margin-left:8px">Réessayer</button></div>`;
       document.getElementById("re-preparer")?.addEventListener("click", preparer);
       majBouton();
@@ -558,6 +583,7 @@ function vueApplication(id) {
     form.querySelectorAll("input[data-sortie]").forEach((s) => s.addEventListener("input", () => (s.dataset.touche = "1")));
     form.onsubmit = envoyer;
     document.getElementById("arreter").onclick = () => {
+      if (estJS) { arreterNode(); return; }
       arreterTravailleur();
       pret = false;
       document.getElementById("resultat").innerHTML = `<div class="alerte">L'outil a été arrêté. L'application va être préparée à nouveau.</div>`;
@@ -606,12 +632,14 @@ function vueApplication(id) {
     zone.innerHTML = `<div class="zone-resultat"><span class="puce en_cours" aria-hidden="true"></span><strong>L'outil travaille…</strong></div><details class="technique" style="margin-top:12px"><summary>Ce que l'outil affiche</summary><pre class="journal" id="journal-vivant"></pre></details>`;
     const lignes = [];
     try {
-      const r = await demander("lancer", { app: d, indexOutil, valeurs, fichiers }, (m) => {
-        if (m.type !== "sortie") return;
-        lignes.push(m.ligne);
+      const afficherLigne = (ligne) => {
+        lignes.push(ligne);
         const j = document.getElementById("journal-vivant");
         if (j) { j.textContent = lignes.filter((l) => !l.startsWith("[passerelle]")).slice(-300).join("\n"); j.scrollTop = j.scrollHeight; }
-      }, transfert);
+      };
+      const r = estJS
+        ? await lancerNode(d, fichiers, (entrees, job) => demander("arguments", { outil: outils[indexOutil], valeurs, entrees, job }), afficherLigne)
+        : await demander("lancer", { app: d, indexOutil, valeurs, fichiers }, (m) => { if (m.type === "sortie") afficherLigne(m.ligne); }, transfert);
       afficherResultat(r, lignes);
     } catch (err) {
       if (document.getElementById("resultat") && !err.message.startsWith("Arrêté")) zone.innerHTML = `<div class="erreur">${echap(err.message)}</div>`;

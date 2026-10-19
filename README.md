@@ -40,6 +40,16 @@ afficher, avec des textes en français. Sa réponse est vérifiée avant d'être
 champs connus) ; si elle n'est pas fiable, Passerelle utilise son analyse automatique.
 Nécessite Chrome ou Edge à jour sur un ordinateur avec une carte graphique compatible WebGPU.
 
+## Outils JavaScript (Node.js)
+
+Les projets JavaScript qui déclarent une commande (champ « bin » de package.json) sont aussi pris en charge :
+Passerelle lit leurs options (commander, cac, yargs, meow, ou lecture directe de process.argv), puis les installe et
+les lance avec un vrai Node.js qui tourne dans le navigateur grâce à WebContainers (StackBlitz). La version publiée
+sur npm est utilisée quand elle correspond au dépôt ; sinon, le code du dépôt est installé avec ses dépendances.
+Le site active pour cela l'« isolation » de la page avec coi-serviceworker (licence MIT) : la première visite
+recharge la page une fois. WebContainers est gratuit pour les projets personnels, open source et les prototypes ;
+une licence commerciale de StackBlitz est nécessaire pour un usage commercial en production.
+
 ## Ce qui fonctionne
 
 - N'importe quel dépôt GitHub **public**.
@@ -69,6 +79,9 @@ Projets conseillés pour une démonstration : `lincolnloop/python-qrcode`, `pwal
 | `index.html` | Interface (pages, formulaires générés, résultats) et mémoire du navigateur |
 | `travailleur.js` | Tourne en arrière-plan : charge Pyodide, récupère le dépôt via l'API GitHub, orchestre analyse, installation et lancement |
 | `py/moteur.py` | Côté Python : installation avec micropip, exécution de l'outil dans la page, capture de ce qu'il affiche et produit |
+| `node-navigateur.js` | Node.js dans le navigateur (WebContainers) : installation et lancement des outils JavaScript |
+| `py/analyseur_js.py` | Lit les options des outils JavaScript sans les exécuter |
+| `coi-serviceworker.js` | Active l'isolation de la page nécessaire à Node.js (licence MIT, Guido Zuidhof) |
 | `ia-consignes.js` | Modèle d'IA utilisé, consignes et format de réponse imposé |
 | `py/ia.py` | Prépare ce que l'IA doit lire et vérifie sa réponse |
 | `py/analyseur.py` | Lit le code du dépôt sans l'exécuter et en déduit les actions et les options (le même que la version Windows) |

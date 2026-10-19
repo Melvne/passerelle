@@ -8,8 +8,8 @@
 const VERSION_PYODIDE = "0.28.3";
 importScripts(`https://cdn.jsdelivr.net/pyodide/v${VERSION_PYODIDE}/full/pyodide.js`);
 
-const VERSION_MOTEUR = "8";
-const FICHIERS_MOTEUR = ["analyseur.py", "installeur.py", "executeur.py", "ia.py", "moteur.py"];
+const VERSION_MOTEUR = "9";
+const FICHIERS_MOTEUR = ["analyseur.py", "analyseur_js.py", "installeur.py", "executeur.py", "ia.py", "moteur.py"];
 const DOSSIERS_IGNORES = new Set([".git", "venv", ".venv", "env", "node_modules", "__pycache__", "build", "dist",
   "site-packages", ".tox", "docs", "doc", "examples", "example", "tests", "test", "benchmarks", ".github"]);
 const LIMITES = { fichiersLegers: 800, fichiersTotal: 2500, octetsTotal: 80 * 1024 * 1024, octetsFichier: 5 * 1024 * 1024 };
@@ -73,7 +73,8 @@ function estLeger(chemin) {
   const nom = chemin.split("/").pop().toLowerCase();
   const racine = !chemin.includes("/");
   if (nom.endsWith(".py")) return true;
-  if (["pyproject.toml", "setup.py", "setup.cfg"].includes(nom)) return true;
+  if (/\.(m|c)?(js|ts)$/.test(nom) && !/\.(d\.ts|min\.js)$/.test(nom) && !/(^|\/)(test|spec|__tests__)\//.test(chemin)) return true;
+  if (["pyproject.toml", "setup.py", "setup.cfg"].includes(nom) || (racine && nom === "package.json")) return true;
   if (racine && (nom.startsWith("readme") || /^requirements.*\.txt$/.test(nom))) return true;
   return false;
 }
@@ -128,6 +129,37 @@ function demanderIA(reqId, contexte) {
     demandesIA.set(idIA, { resolve, reject });
     envoyer({ type: "demande_ia", reqId, idIA, contexte });
   });
+}
+
+async function correspondNpm(nom, depot) {
+  if (!nom) return false;
+  try {
+    const r = await fetch(`https://registry.npmjs.org/${nom.replace("/", "%2F")}`);
+    if (!r.ok) return false;
+    const d = await r.json();
+    const urls = [JSON.stringify(d.repository || ""), d.homepage || "", JSON.stringify(d.bugs || "")].join(" ").toLowerCase();
+    return urls.includes(`github.com/${depot.toLowerCase()}`);
+  } catch (e) { return false; }
+}
+
+// Tous les fichiers utiles du dépôt (code + données), pour les lancer avec Node.js dans la page
+async function fichiersPourNode(id, meta, journal) {
+  let total = 0;
+  const autres = meta.fichiers.filter(([p, t]) => !estLeger(p) && (total += t) <= LIMITES.octetsTotal).map(([p]) => p);
+  if (autres.length) {
+    journal(`Récupération des ${autres.length} autres fichiers du projet…`);
+    await telechargerFichiers(id, meta, autres, journal);
+  }
+  const base = `/apps/${id}/code`, liste = [];
+  (function parcourir(dossier) {
+    for (const n of pyodide.FS.readdir(dossier)) {
+      if (n === "." || n === "..") continue;
+      const chemin = `${dossier}/${n}`;
+      if (pyodide.FS.isDir(pyodide.FS.stat(chemin).mode)) parcourir(chemin);
+      else { const o = pyodide.FS.readFile(chemin); liste.push({ chemin: chemin.slice(base.length + 1), octets: o.slice().buffer }); }
+    }
+  })(base);
+  return liste;
 }
 
 async function correspondPyPI(nom, depot) {
@@ -189,11 +221,11 @@ async function installer(msg) {
     cle = "analyse";
     etape("analyse", "en_cours");
     journal("Lecture du code du projet…");
-    const reglesJson = moteur.analyser(id, meta.depot);
+    const reglesJson = moteur.analyser(id, meta.depot, meta.langage || "");
     const regles = JSON.parse(reglesJson);
     let analyse = regles;
-    const aDuPython = meta.fichiers.some(([p]) => p.endsWith(".py"));
-    if (msg.iaLocale && aDuPython) {
+    const aDuCode = meta.fichiers.some(([p]) => /\.(py|js|mjs|cjs|ts)$/.test(p));
+    if (msg.iaLocale && aDuCode) {
       try {
         journal("Analyse du projet par l'IA…");
         const contexte = moteur.contexte_ia(id, meta.depot, meta.description || "", reglesJson);
@@ -216,6 +248,22 @@ async function installer(msg) {
     analyse.source = analyse.source || "regles";
     journal(`Trouvé : ${analyse.outils.length} action(s) possible(s).`);
     etape("analyse", "fait", analyse.source === "ia" ? "Interface décrite par l'IA." : "Analyse automatique (sans IA).");
+
+    if (analyse.langage === "javascript") {
+      // Les outils JavaScript sont installés et lancés par la page (Node.js dans le navigateur)
+      cle = "installation";
+      etape("installation", "en_cours");
+      const npm = await correspondNpm(analyse.lancement.paquet, meta.depot);
+      journal(npm ? `Version officielle « ${analyse.lancement.paquet} » trouvée sur npm.` : "Pas de version officielle correspondante sur npm : utilisation du code du dépôt.");
+      if (!npm && !analyse.lancement.source_presente) {
+        const raison = "Le code de cette commande n'est pas dans le dépôt (il est fabriqué au moment de la publication) et aucune version publiée n'a été trouvée.";
+        etape("installation", "erreur", raison);
+        return { ok: false, raison, description: meta.description || analyse.description };
+      }
+      const fichiers = npm ? [] : await fichiersPourNode(id, meta, journal);
+      const description = analyse.source === "ia" ? (analyse.description || meta.description) : (meta.description || analyse.description);
+      return { ok: true, analyse, meta, description, npm, fichiers, problemes: [], paquet_installe: npm, javascript: true };
+    }
 
     cle = "installation";
     const res = await etapeInstallation();
@@ -298,7 +346,26 @@ onmessage = async (e) => {
   const msg = e.data;
   try {
     if (msg.type === "init") { await initialiser(); envoyer({ type: "fin", reqId: msg.reqId }); return; }
-    if (msg.type === "installer") { envoyer({ type: "fin", reqId: msg.reqId, resultat: await installer(msg) }); return; }
+    if (msg.type === "installer") {
+      const r = await installer(msg);
+      envoyer({ type: "fin", reqId: msg.reqId, resultat: r }, (r.fichiers || []).map((f) => f.octets));
+      return;
+    }
+    if (msg.type === "arguments") {
+      await initialiser();
+      envoyer({ type: "fin", reqId: msg.reqId, resultat: JSON.parse(moteur.construire_args(JSON.stringify(msg.outil), JSON.stringify(msg.valeurs), JSON.stringify(msg.entrees), msg.job)) });
+      return;
+    }
+    if (msg.type === "fichiers_js") {
+      await initialiser();
+      const journal = (ligne) => envoyer({ type: "journal", reqId: msg.reqId, ligne: String(ligne) });
+      nettoyer(msg.id);
+      const legers = msg.meta.fichiers.filter(([p]) => estLeger(p)).map(([p]) => p).slice(0, LIMITES.fichiersLegers);
+      await telechargerFichiers(msg.id, msg.meta, legers, journal);
+      const fichiers = await fichiersPourNode(msg.id, msg.meta, journal);
+      envoyer({ type: "fin", reqId: msg.reqId, resultat: fichiers }, fichiers.map((f) => f.octets));
+      return;
+    }
     if (msg.type === "reponse_ia") {
       const d = demandesIA.get(msg.idIA);
       if (d) { demandesIA.delete(msg.idIA); msg.erreur ? d.reject(new ErreurClaire(msg.erreur)) : d.resolve(msg.reponse); }
