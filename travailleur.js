@@ -8,7 +8,7 @@
 const VERSION_PYODIDE = "0.28.3";
 importScripts(`https://cdn.jsdelivr.net/pyodide/v${VERSION_PYODIDE}/full/pyodide.js`);
 
-const VERSION_MOTEUR = "11";
+const VERSION_MOTEUR = "12";
 const FICHIERS_MOTEUR = ["analyseur.py", "analyseur_js.py", "installeur.py", "executeur.py", "ia.py", "moteur.py"];
 const DOSSIERS_IGNORES = new Set([".git", "venv", ".venv", "env", "node_modules", "__pycache__", "build", "dist",
   "site-packages", ".tox", "docs", "doc", "examples", "example", "tests", "test", "benchmarks", ".github"]);

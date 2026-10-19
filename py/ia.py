@@ -290,7 +290,9 @@ def valider(racine, reponse_json, regles_json):
                           ensure_ascii=False)
 
     regles = json.loads(regles_json) if regles_json else {}
-    lancement = _lancement(racine, r.get("lancement"))
+    langage = regles.get("langage", "python")
+    # Pour JavaScript, la façon de lancer l'outil vient toujours de package.json (lu avec exactitude par les règles)
+    lancement = regles.get("lancement") if langage == "javascript" and regles.get("ok") else _lancement(racine, r.get("lancement"))
     if not lancement and regles.get("ok"):
         lancement = regles["lancement"]  # l'IA s'est trompée de point d'entrée : on garde celui des règles
     if not lancement:
@@ -328,10 +330,11 @@ def valider(racine, reponse_json, regles_json):
 
     if regles.get("ok"):
         outils = _fusionner(regles["outils"], outils)
-        lancement = regles["lancement"] if not _lancement(racine, r.get("lancement")) else lancement
+        if langage != "javascript":
+            lancement = regles["lancement"] if not _lancement(racine, r.get("lancement")) else lancement
 
     analyse = {
-        "ok": True, "source": "ia",
+        "ok": True, "source": "ia", "langage": langage,
         "description": _texte(r.get("description"), regles.get("description", ""), 500),
         "style": regles.get("style") or "ia", "outils": outils, "lancement": lancement,
         "avertissements": [_texte(a, "", 300) for a in (r.get("avertissements") or [])[:3] if _texte(a)],
