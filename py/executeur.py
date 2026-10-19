@@ -114,7 +114,9 @@ def construire_arguments(outil, valeurs, fichiers_recus, dossier_job):
             else:
                 cible.extend([p["drapeau"]] + morceaux)
 
-    return avant_opt + avant_pos + list(outil.get("prefixe", [])) + opt + pos
+    # Arguments sans drapeau avant les options : une option qui accepte plusieurs valeurs (ex. « --output <f...> »)
+    # avalerait sinon les fichiers placés après elle.
+    return avant_opt + avant_pos + list(outil.get("prefixe", [])) + pos + opt
 
 
 def lancer(commande, dossier_python, dossier_job, journal, delai=3600):
