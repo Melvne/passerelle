@@ -148,7 +148,8 @@ def _resume_regles(regles_json):
 # ------------------------------------------------------------------ validation
 
 def _texte(v, defaut="", limite=400):
-    return str(v).strip()[:limite] if isinstance(v, (str, int, float)) and str(v).strip() else defaut
+    t = str(v).strip()[:limite] if isinstance(v, (str, int, float)) and str(v).strip() else defaut
+    return t[:1].upper() + t[1:] if t else t  # « le texte à afficher » → « Le texte à afficher »
 
 
 def _nom(v):
