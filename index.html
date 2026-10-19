@@ -150,7 +150,69 @@ const SUGGESTIONS = [
   { lien: "https://github.com/svg/svgo", titre: "Alléger une image SVG", texte: "Réduit le poids d'un fichier SVG (logos, icônes) sans changer son apparence. Outil JavaScript.", icone: "page", fond: "var(--vert-pale)", coul: "var(--vert)" },
   { lien: "https://github.com/Python-Markdown/markdown", titre: "Convertir un texte Markdown en page web", texte: "Transforme un fichier .md (texte mis en forme) en page HTML.", icone: "page", fond: "var(--orange-pale)", coul: "var(--orange)" },
 ];
-const STATUTS = { pret: "Prête", incomplet: "Installée avec des soucis", erreur: "Problème", installation: "En cours d'installation" };
+const STATUTS = { pret: "Prête", incomplet: "Installée avec des soucis", erreur: "Problème", installation: "En cours d'installation", application: "Application à télécharger" };
+
+// ================================================================ applications déjà prêtes (Releases GitHub)
+function systemeVisiteur() {
+  const ua = navigator.userAgent || "", p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "").toLowerCase();
+  if (/android/i.test(ua)) return "android";
+  if (/iphone|ipad|ipod/i.test(ua)) return "ios";
+  if (p.includes("win") || /windows/i.test(ua)) return "windows";
+  if (p.includes("mac") || /mac os/i.test(ua)) return "mac";
+  if (p.includes("linux") || /linux/i.test(ua)) return "linux";
+  return "inconnu";
+}
+const NOMS_SYSTEMES = { windows: "Windows", mac: "Mac", linux: "Linux", android: "Android", ios: "iPhone", inconnu: "votre appareil" };
+function systemeDuFichier(nom) {
+  const n = nom.toLowerCase();
+  if (/\.(sig|asc|sha\d*|sha256sum|md5|blockmap|ya?ml|json|txt|sbom|intoto\.jsonl)$/.test(n) || /checksums?|latest-/.test(n)) return null;
+  if (/\.(exe|msi|msix|appx)$/.test(n) || /(win(dows)?|win64|win32)[^a-z]/.test(n + " ")) return "windows";
+  if (/\.(dmg|pkg)$/.test(n) || /(mac|macos|darwin|osx|apple)/.test(n)) return "mac";
+  if (/\.apk$|\.aab$/.test(n) || /android/.test(n)) return "android";
+  if (/\.ipa$/.test(n)) return "ios";
+  if (/\.(appimage|deb|rpm|flatpak|snap)$/.test(n) || /linux/.test(n)) return "linux";
+  return "autre";
+}
+function scoreFichier(nom, systeme) {
+  const n = nom.toLowerCase();
+  let s = 0;
+  if (systeme === "windows") { if (/\.(exe|msi)$/.test(n)) s += 4; if (/setup|install/.test(n)) s += 2; if (/x64|amd64|win64|x86_64/.test(n)) s += 1; if (/arm64|aarch64/.test(n)) s -= 2; if (/portable/.test(n)) s -= 1; }
+  if (systeme === "mac") { if (/\.dmg$/.test(n)) s += 4; if (/\.pkg$/.test(n)) s += 3; if (/universal/.test(n)) s += 2; if (/arm64|aarch64|apple/.test(n)) s += 1; }
+  if (systeme === "linux") { if (/\.appimage$/.test(n)) s += 4; if (/\.deb$/.test(n)) s += 3; if (/\.rpm$/.test(n)) s += 2; if (/x86_64|amd64/.test(n)) s += 1; if (/arm64|aarch64|armv7/.test(n)) s -= 2; }
+  if (systeme === "android" && /\.apk$/.test(n)) s += 4;
+  return s;
+}
+function fichiersParSysteme(version) {
+  const groupes = {};
+  for (const f of version.fichiers) { const sys = systemeDuFichier(f.nom); if (sys) (groupes[sys] = groupes[sys] || []).push(f); }
+  for (const [sys, liste] of Object.entries(groupes)) liste.sort((a, b) => scoreFichier(b.nom, sys) - scoreFichier(a.nom, sys));
+  return groupes;
+}
+const tailleLisible = (o) => o > 1e9 ? `${(o / 1e9).toFixed(1)} Go` : o > 1e6 ? `${Math.round(o / 1e6)} Mo` : `${Math.max(1, Math.round(o / 1e3))} Ko`;
+function carteApplication(d) {
+  const v = d.version, sys = systemeVisiteur(), groupes = fichiersParSysteme(v);
+  const conseil = (groupes[sys] || [])[0];
+  const autres = Object.entries(groupes).filter(([k]) => k !== "autre");
+  return `
+    <section class="carte" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <h2 class="h2">Ce projet est déjà une application</h2>
+        <p style="margin:0;color:var(--doux)">Il a sa propre interface : pas besoin de Passerelle pour la créer. Son auteur fournit des fichiers prêts à installer, comme n'importe quel logiciel.</p>
+      </div>
+      ${conseil ? `
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <a class="bouton" href="${echap(conseil.url)}" rel="noopener" style="align-self:flex-start">${ICONES.telecharger} Télécharger pour ${NOMS_SYSTEMES[sys]}</a>
+          <span class="aide" style="margin:0">${echap(conseil.nom)} · ${tailleLisible(conseil.taille)} · version ${echap(v.tag || v.nom)}</span>
+        </div>
+        <div class="alerte">Ce fichier vient directement de la page GitHub de l'auteur. Votre ordinateur peut afficher un avertissement à l'ouverture : n'installez que des projets que vous connaissez et en qui vous avez confiance.</div>`
+      : `<div class="alerte">Aucun fichier n'est proposé pour ${NOMS_SYSTEMES[sys]} dans la dernière version. ${autres.length ? "Il en existe pour d'autres systèmes, listés ci-dessous." : ""}</div>`}
+      ${autres.length ? `<details class="technique"><summary>Tous les fichiers de la version ${echap(v.tag || v.nom)}</summary>
+        <ul style="margin:10px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px">
+          ${autres.map(([k, liste]) => liste.map((f) => `<li><a href="${echap(f.url)}" rel="noopener">${echap(f.nom)}</a> <span style="color:var(--doux);font-size:13px">(${NOMS_SYSTEMES[k] || k}, ${tailleLisible(f.taille)})</span></li>`).join("")).join("")}
+        </ul></details>` : ""}
+      <a href="${echap(v.page)}" target="_blank" rel="noopener" style="font-size:14px">Voir la page des versions sur GitHub</a>
+    </section>`;
+}
 const ETAPES = [["telechargement", "Télécharger le projet"], ["analyse", "Comprendre le projet"], ["installation", "Installer dans le navigateur"], ["interface", "Créer l'interface"]];
 
 function lireLien(texte) {
@@ -238,7 +300,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=12");
+  travailleur = new Worker("travailleur.js?v=13");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);
@@ -331,6 +393,7 @@ function vueAccueil() {
     const id = idDe(depot);
     const a = APPS[id];
     if (a && ["pret", "incomplet"].includes(a.statut)) { location.hash = `#/app/${id}`; return; }
+    if (a && a.statut === "application") { location.hash = `#/installation/${id}`; return; }
     if (a && a.statut === "installation" && installations.has(id)) { location.hash = `#/installation/${id}`; return; }
     demarrerInstallation(id, depot);
     location.hash = `#/installation/${id}`;
@@ -375,6 +438,11 @@ function demarrerInstallation(id, depot) {
         r = { ok: false, raison: `L'installation de cet outil JavaScript a échoué : ${e.message}`, description: r.description };
       }
     }
+    if (!r.ok && r.application) {
+      Object.assign(app, { statut: "application", version: r.version, description: r.description || app.description, erreur: null });
+      APPS[id] = app; sauver(); rafraichir();
+      return;
+    }
     if (r.ok) {
       Object.assign(app, {
         statut: r.problemes.length ? "incomplet" : "pret", analyse: r.analyse, description: r.description,
@@ -409,7 +477,7 @@ function dessinerInstallation(id) {
   const enCours = suivi.etapes.some((e) => e.etat === "en_cours");
   const pct = Math.round(((faits + (enCours ? 0.5 : 0)) / suivi.etapes.length) * 100);
   const ouvert = zone.querySelector("details")?.open;
-  const titre = d.statut === "installation" ? "On prépare votre application" : d.statut === "erreur" ? "L'installation n'a pas abouti" : "Votre application est prête";
+  const titre = d.statut === "installation" ? "On prépare votre application" : d.statut === "erreur" ? "L'installation n'a pas abouti" : d.statut === "application" ? "Une application prête à installer" : "Votre application est prête";
   const analyse = d.analyse;
   zone.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:12px">
@@ -434,6 +502,7 @@ function dessinerInstallation(id) {
       </li>`).join("")}
     </ol>
     ${suivi.alerteIA ? `<div class="alerte">L'IA n'a pas pu être utilisée (${echap(suivi.alerteIA)}). Passerelle a utilisé son analyse automatique à la place.</div>` : ""}
+    ${d.statut === "application" && d.version ? carteApplication(d) : ""}
     ${d.statut === "erreur" ? `<div class="erreur" role="alert">${echap(d.erreur || "Une erreur s'est produite.")}</div>` : ""}
     ${d.statut === "incomplet" ? `<div class="alerte">Certaines bibliothèques de ce projet ne fonctionnent pas dans un navigateur (${echap((d.problemes || []).join(", "))}). L'application peut quand même marcher en partie : essayez-la.</div>` : ""}
     ${suivi.journal.length ? `<details class="technique" ${ouvert ? "open" : ""}><summary>Détails techniques</summary><pre class="journal" id="journal">${echap(suivi.journal.join("\n"))}</pre></details>` : ""}
@@ -759,7 +828,7 @@ function vueBibliotheque() {
         <div><h2 style="font-size:18px;font-weight:600;font-family:var(--texte);text-transform:capitalize">${echap(a.nom)}</h2><div class="mono">${echap(a.depot)}</div></div>
         ${a.description ? `<p style="margin:0;font-size:14px;color:var(--doux);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${echap(a.description)}</p>` : ""}
         <div class="ligne" style="margin-top:auto" data-zone="${echap(a.id)}">
-          <a class="bouton" style="flex:1 1 0;min-height:44px" href="${["pret", "incomplet"].includes(a.statut) ? "#/app/" : "#/installation/"}${encodeURIComponent(a.id)}">${["pret", "incomplet"].includes(a.statut) ? "Ouvrir" : "Voir"}</a>
+          <a class="bouton" style="flex:1 1 0;min-height:44px" href="${["pret", "incomplet"].includes(a.statut) ? "#/app/" : "#/installation/"}${encodeURIComponent(a.id)}">${["pret", "incomplet"].includes(a.statut) ? "Ouvrir" : a.statut === "application" ? "Télécharger" : "Voir"}</a>
           <button class="bouton danger" style="min-height:44px;padding:0 14px" type="button" data-supprimer="${echap(a.id)}" aria-label="Retirer ${echap(a.nom)}">Retirer</button>
         </div>
       </article>`).join("")}
