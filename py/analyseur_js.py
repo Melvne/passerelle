@@ -402,10 +402,35 @@ def bins(pkg):
     return {k: v for k, v in (b or {}).items() if isinstance(v, str)} if isinstance(b, dict) else {}
 
 
+# Bibliothèques qui ont besoin de l'ordinateur lui-même (programmes compilés, terminal, vrai navigateur, matériel) :
+# elles ne peuvent pas fonctionner dans le Node.js du navigateur.
+JS_INCOMPATIBLES = ("node-pty", "@lydell/node-pty", "playwright", "playwright-core", "puppeteer", "electron", "sharp",
+                    "better-sqlite3", "sqlite3", "canvas", "serialport", "usb", "robotjs", "@nut-tree/nut-js",
+                    "node-gyp", "ffi-napi", "frida", "keytar", "fsevents", "@napi-rs/canvas", "onnxruntime-node",
+                    "@tensorflow/tfjs-node")
+JS_MCP = ("@modelcontextprotocol/sdk", "@modelcontextprotocol/server", "fastmcp")
+
+
+def _verifier_compatibilite(pkg):
+    deps = set((pkg.get("dependencies") or {}).keys())
+    if deps & set(JS_MCP):
+        return ("Ce projet est un outil pour les assistants d'intelligence artificielle (un « serveur MCP ») : il est fait "
+                "pour être branché à une IA comme Claude ou ChatGPT, pas pour être utilisé directement par une personne. "
+                "Il ne peut donc pas devenir une application Passerelle.")
+    lourdes = sorted(deps & set(JS_INCOMPATIBLES))
+    if lourdes:
+        return (f"Cet outil a besoin de {', '.join(lourdes[:4])}, qui doit fonctionner directement sur l'ordinateur "
+                "(programmes compilés, terminal, vrai navigateur ou matériel) : il ne peut pas tourner dans un navigateur web.")
+    return None
+
+
 def analyser_depot(racine, nom_depot=""):
     pkg = lire_package(racine)
     readme = lire_readme(racine)
     description = _texte(pkg.get("description")) or readme
+    probleme = _verifier_compatibilite(pkg)
+    if probleme and bins(pkg):
+        return {"ok": False, "langage": "javascript", "description": description, "raison": probleme, "definitif": True}
     liste = bins(pkg)
     entree, nom_bin, chemin_bin = None, None, None
     # Le bin qui porte le nom du dépôt ou du paquet en priorité

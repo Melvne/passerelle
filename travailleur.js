@@ -8,7 +8,7 @@
 const VERSION_PYODIDE = "0.28.3";
 importScripts(`https://cdn.jsdelivr.net/pyodide/v${VERSION_PYODIDE}/full/pyodide.js`);
 
-const VERSION_MOTEUR = "12";
+const VERSION_MOTEUR = "13";
 const FICHIERS_MOTEUR = ["analyseur.py", "analyseur_js.py", "installeur.py", "executeur.py", "ia.py", "moteur.py"];
 const DOSSIERS_IGNORES = new Set([".git", "venv", ".venv", "env", "node_modules", "__pycache__", "build", "dist",
   "site-packages", ".tox", "docs", "doc", "examples", "example", "tests", "test", "benchmarks", ".github"]);
@@ -241,7 +241,8 @@ async function installer(msg) {
     let analyse = regles;
     // L'IA n'est utile que pour un projet principalement Python ou JavaScript (sinon : quelques minutes perdues)
     const aDuCode = meta.fichiers.some(([p]) => /\.(py|js|mjs|cjs|ts)$/.test(p))
-      && (!meta.langage || ["Python", "JavaScript", "TypeScript", "Jupyter Notebook"].includes(meta.langage) || regles.ok);
+      && (!meta.langage || ["Python", "JavaScript", "TypeScript", "Jupyter Notebook"].includes(meta.langage) || regles.ok)
+      && !regles.definitif;  // verdict certain (ex. outil pour assistants IA) : inutile de demander à l'IA
     if (msg.iaLocale && aDuCode) {
       try {
         journal("Analyse du projet par l'IA…");
