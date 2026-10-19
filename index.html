@@ -183,9 +183,13 @@ function scoreFichier(nom, systeme) {
   return s;
 }
 function fichiersParSysteme(version) {
+  // Pour chaque système : les fichiers de la version la plus récente qui en propose, le plus adapté en premier
   const groupes = {};
   for (const f of version.fichiers) { const sys = systemeDuFichier(f.nom); if (sys) (groupes[sys] = groupes[sys] || []).push(f); }
-  for (const [sys, liste] of Object.entries(groupes)) liste.sort((a, b) => scoreFichier(b.nom, sys) - scoreFichier(a.nom, sys));
+  for (const [sys, liste] of Object.entries(groupes)) {
+    const recente = liste.reduce((m, f) => (f.date || "") > m ? f.date || "" : m, "");
+    groupes[sys] = liste.filter((f) => (f.date || "") === recente).sort((a, b) => scoreFichier(b.nom, sys) - scoreFichier(a.nom, sys));
+  }
   return groupes;
 }
 const tailleLisible = (o) => o > 1e9 ? `${(o / 1e9).toFixed(1)} Go` : o > 1e6 ? `${Math.round(o / 1e6)} Mo` : `${Math.max(1, Math.round(o / 1e3))} Ko`;
@@ -202,11 +206,11 @@ function carteApplication(d) {
       ${conseil ? `
         <div style="display:flex;flex-direction:column;gap:8px">
           <a class="bouton" href="${echap(conseil.url)}" rel="noopener" style="align-self:flex-start">${ICONES.telecharger} Télécharger pour ${NOMS_SYSTEMES[sys]}</a>
-          <span class="aide" style="margin:0">${echap(conseil.nom)} · ${tailleLisible(conseil.taille)} · version ${echap(v.tag || v.nom)}</span>
+          <span class="aide" style="margin:0">${echap(conseil.nom)} · ${tailleLisible(conseil.taille)} · version ${echap(conseil.tag || "")}${conseil.date ? ` du ${new Date(conseil.date).toLocaleDateString("fr-FR")}` : ""}</span>
         </div>
         <div class="alerte">Ce fichier vient directement de la page GitHub de l'auteur. Votre ordinateur peut afficher un avertissement à l'ouverture : n'installez que des projets que vous connaissez et en qui vous avez confiance.</div>`
-      : `<div class="alerte">Aucun fichier n'est proposé pour ${NOMS_SYSTEMES[sys]} dans la dernière version. ${autres.length ? "Il en existe pour d'autres systèmes, listés ci-dessous." : ""}</div>`}
-      ${autres.length ? `<details class="technique"><summary>Tous les fichiers de la version ${echap(v.tag || v.nom)}</summary>
+      : `<div class="alerte">Aucun fichier n'est proposé pour ${NOMS_SYSTEMES[sys]}. ${autres.length ? "Il en existe pour d'autres systèmes, listés ci-dessous." : ""}</div>`}
+      ${autres.length ? `<details class="technique"><summary>Fichiers pour les autres systèmes</summary>
         <ul style="margin:10px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px">
           ${autres.map(([k, liste]) => liste.map((f) => `<li><a href="${echap(f.url)}" rel="noopener">${echap(f.nom)}</a> <span style="color:var(--doux);font-size:13px">(${NOMS_SYSTEMES[k] || k}, ${tailleLisible(f.taille)})</span></li>`).join("")).join("")}
         </ul></details>` : ""}
@@ -300,7 +304,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=14");
+  travailleur = new Worker("travailleur.js?v=15");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);

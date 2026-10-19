@@ -131,15 +131,18 @@ function demanderIA(reqId, contexte) {
   });
 }
 
-// Dernière version publiée (« Releases ») : les applications déjà prêtes à installer y mettent leurs fichiers
-async function derniereVersion(depot) {
+// Versions publiées (« Releases ») : les applications déjà prêtes à installer y mettent leurs fichiers.
+// Beaucoup de projets publient chaque système dans une version séparée (ex. « windows-v1.2 ») : on regarde les 30 dernières.
+async function versionsPubliees(depot) {
   try {
-    const r = await fetch(`https://api.github.com/repos/${depot}/releases/latest`, { headers: { Accept: "application/vnd.github+json" } });
+    const r = await fetch(`https://api.github.com/repos/${depot}/releases?per_page=30`, { headers: { Accept: "application/vnd.github+json" } });
     if (!r.ok) return null;
-    const d = await r.json();
-    const fichiers = (d.assets || []).map((a) => ({ nom: a.name, url: a.browser_download_url, taille: a.size }));
+    const liste = (await r.json()).filter((v) => !v.draft && !v.prerelease);
+    const fichiers = liste.flatMap((v) => (v.assets || []).map((a) => ({
+      nom: a.name, url: a.browser_download_url, taille: a.size, tag: v.tag_name, date: v.published_at,
+    })));
     if (!fichiers.length) return null;
-    return { nom: d.name || d.tag_name, tag: d.tag_name, date: d.published_at, page: d.html_url, fichiers };
+    return { page: `https://github.com/${depot}/releases`, fichiers };
   } catch (e) { return null; }
 }
 
@@ -256,7 +259,7 @@ async function installer(msg) {
     if (!analyse.ok) {
       // Pas un outil en ligne de commande : c'est peut-être déjà une application, avec des fichiers à installer
       journal("Recherche d'une version prête à installer (Releases)…");
-      const version = await derniereVersion(meta.depot);
+      const version = await versionsPubliees(meta.depot);
       if (version) {
         etape("analyse", "fait", "Ce projet est déjà une application, avec des fichiers prêts à installer.");
         return { ok: false, application: true, version, langage: meta.langage, description: meta.description || analyse.description };
