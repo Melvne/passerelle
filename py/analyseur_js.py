@@ -463,6 +463,11 @@ def analyser_depot(racine, nom_depot=""):
     for o in outils:
         o["params"].sort(key=lambda p: (not p["avant"], not p["positionnel"]))
         o["libelle"] = _libelle(o["nom"]) if o["nom"] else "Utiliser l'outil"
+        for p in o["params"]:
+            # Option à une lettre (« -e ») : le début de son explication fait un meilleur libellé que « E »
+            if len(p["nom"]) <= 2 and p["aide"]:
+                mots = re.sub(r"^(Mode|Select|Specifies|Set|Sets|Use|Enable|Show)\s*:?\s*", "", p["aide"]).split()
+                p["libelle"] = _libelle(" ".join(mots[:5]).rstrip(".,:;")) or p["libelle"]
     return {
         "ok": True, "langage": "javascript", "description": description, "style": style, "outils": outils,
         "lancement": {"type": "node", "paquet": pkg.get("name") or "", "bin": nom_bin, "fichier": re.sub(r"^\./", "", chemin_bin or ""),

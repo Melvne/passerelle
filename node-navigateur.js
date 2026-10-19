@@ -84,10 +84,23 @@ async function installerNode(app, fichiers, journal) {
   } else {
     journal(`Copie des ${fichiers.length} fichiers du projet…`);
     await ecrireFichiersNode(`${dossier}/code`, fichiers);
-    journal("Installation des dépendances avec npm…");
-    const code = await executerNode("npm", ["install", ...npmOptions], { cwd: `${dossier}/code` }, journal);
+    const code_ = `${dossier}/code`;
+    const existe = async (rel) => { try { await vm.fs.readFile(`${code_}/${rel}`); return true; } catch (e) { return false; } };
+    const pkg = JSON.parse(await vm.fs.readFile(`${code_}/package.json`, "utf-8").catch(() => "{}"));
+    const scripts = pkg.scripts || {};
+    const aFabriquer = !(await existe(L.fichier)) && (scripts.build || scripts.prepare);
+    // Les scripts automatiques d'un dépôt (préparation, outils de développeur) échouent souvent ici : on les ignore,
+    // et on ne lance la fabrication que si le programme n'existe pas encore dans le dépôt.
+    journal(aFabriquer ? "Installation des dépendances et des outils de fabrication avec npm…" : "Installation des dépendances avec npm…");
+    const code = await executerNode("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error", ...(aFabriquer ? [] : ["--omit=dev"])], { cwd: code_ }, journal);
     if (code !== 0) throw new Error(`l'installation des dépendances a échoué (code ${code})`);
-    programme = absolu(`${dossier}/code/${L.fichier}`);
+    if (aFabriquer) {
+      journal("Fabrication du programme (npm run " + (scripts.build ? "build" : "prepare") + ")…");
+      const c2 = await executerNode("npm", ["run", scripts.build ? "build" : "prepare"], { cwd: code_ }, journal);
+      if (c2 !== 0 || !(await existe(L.fichier))) throw new Error("la fabrication du programme a échoué");
+    }
+    if (!(await existe(L.fichier))) throw new Error(`le programme « ${L.fichier} » est introuvable dans le dépôt`);
+    programme = absolu(`${code_}/${L.fichier}`);
   }
   appsNodePretes.set(app.id, programme);
   journal("Installé.");

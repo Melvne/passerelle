@@ -125,7 +125,7 @@ pre.sortie-texte{background:var(--surface);color:var(--encre);border:1px solid v
 </div>
 
 <script src="ia-consignes.js?v=9"></script>
-<script src="node-navigateur.js?v=10"></script>
+<script src="node-navigateur.js?v=11"></script>
 <script>
 "use strict";
 const $page = document.getElementById("page");
@@ -238,7 +238,7 @@ function majPython(etat, message) {
   t.textContent = { chargement: "Chargement de Python…", pret: "Python est prêt", erreur: `Python n'a pas pu se charger${message ? " : " + message : ""}`, arret: "Python n'est pas encore chargé" }[etat] || etat;
 }
 function creerTravailleur() {
-  travailleur = new Worker("travailleur.js?v=10");
+  travailleur = new Worker("travailleur.js?v=11");
   travailleur.onmessage = (e) => {
     const m = e.data;
     if (m.type === "python") return majPython(m.etat, m.message);
