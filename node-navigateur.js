@@ -12,7 +12,7 @@ let nodeVM = null, demarrageNode = null;
 const appsNodePretes = new Map();   // id → chemin absolu du programme à lancer
 let processusNode = null;
 
-const sansCouleurs = (t) => t.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "").replace(/\r(?!\n)/g, "\n");
+const sansCouleurs = (t) => t.replace(/\r\n/g, "\n").replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "").replace(/\r(?!\n)/g, "\n");
 
 function demarrerNode() {
   if (nodeVM) return Promise.resolve(nodeVM);
