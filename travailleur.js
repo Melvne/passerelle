@@ -236,7 +236,9 @@ async function installer(msg) {
     const reglesJson = moteur.analyser(id, meta.depot, meta.langage || "");
     const regles = JSON.parse(reglesJson);
     let analyse = regles;
-    const aDuCode = meta.fichiers.some(([p]) => /\.(py|js|mjs|cjs|ts)$/.test(p));
+    // L'IA n'est utile que pour un projet principalement Python ou JavaScript (sinon : quelques minutes perdues)
+    const aDuCode = meta.fichiers.some(([p]) => /\.(py|js|mjs|cjs|ts)$/.test(p))
+      && (!meta.langage || ["Python", "JavaScript", "TypeScript", "Jupyter Notebook"].includes(meta.langage) || regles.ok);
     if (msg.iaLocale && aDuCode) {
       try {
         journal("Analyse du projet par l'IA…");
